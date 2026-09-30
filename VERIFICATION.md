@@ -1,5 +1,14 @@
 # Release verification
 
+## Version 1.0.3
+
+- Persistent Add/Remove modes and temporary Alt override passed.
+- Sidebar mouse events pass through while the preview remains live.
+- Entering the sidebar ends a stroke; returning does not paint unintended regions.
+- Add/Alt/remove, stroke undo, clean ring fill, icons, and registration cleanup passed.
+- Dark inset and centered mode buttons verified in the live Blender panel.
+- Global Blender theme and source geometry are unchanged.
+
 ## Version 1.0.2
 
 - Alt-click and Alt-drag remove only selected preview regions.

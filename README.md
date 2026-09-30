@@ -3,9 +3,10 @@
 A Blender extension with a planar Shape Builder and two object-centering tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-Version 1.0.2 adds baby-pink and white panel icons and matching Shape Builder
-previews. Click/drag adds; hold Alt and click/drag to remove chosen preview
-regions. A minus indicator shows remove mode. Wire guides stay unchanged.
+Version 1.0.3 groups the pink/white controls in a dark inset and adds centered
+Add/Remove buttons. The chosen mode and active Shape Builder stay highlighted.
+Hold Alt for temporary removal, then release it to return to the chosen mode.
+Wire guides stay unchanged.
 
 ## One-time installation for friends
 
@@ -43,7 +44,7 @@ bridge credentials, or external Python dependencies in the extension package.
 ## Release your next change
 
 1. Edit the Python files in `extension/`.
-2. Increase `version` in `extension/blender_manifest.toml`, for example to `1.0.2`.
+2. Increase `version` in `extension/blender_manifest.toml`, for example to `1.0.4`.
 3. Run the builder below using Python 3.11+ (Blender's bundled Python works).
 4. Test the resulting ZIP in Blender, then commit and push the source and `docs/`.
 
