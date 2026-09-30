@@ -1,5 +1,17 @@
 # Release verification
 
+## Version 1.0.2
+
+- Alt-click and Alt-drag remove only selected preview regions.
+- Releasing/pressing Alt during a drag switches modes without retracing a previous segment.
+- Ordinary clicks keep already-selected regions; removing empty regions adds nothing.
+- Ctrl+Z restores a whole stroke, including strokes with modifier changes.
+- Clean two-face ring generation and icon register/unregister/re-register tests passed.
+- Six custom pink/white icons render in the live Blender panel.
+- Scene geometry and any running Shape Builder preview are preserved during the UI update.
+
+## Version 1.0.1
+
 Version 1.0.1, tested with Blender 5.2 on Windows.
 
 - Blender extension build and validation passed.

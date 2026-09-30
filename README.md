@@ -3,6 +3,10 @@
 A Blender extension with a planar Shape Builder and two object-centering tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
+Version 1.0.2 adds baby-pink and white panel icons and matching Shape Builder
+previews. Click/drag adds; hold Alt and click/drag to remove chosen preview
+regions. A minus indicator shows remove mode. Wire guides stay unchanged.
+
 ## One-time installation for friends
 
 Repository URL: **https://harhtica.github.io/harhtools/index.json**
