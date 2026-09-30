@@ -18,7 +18,7 @@ from collections import defaultdict
 from mathutils import Vector, Matrix
 from mathutils.geometry import delaunay_2d_cdt
 from mathutils.bvhtree import BVHTree
-from bpy.props import FloatProperty
+from bpy.props import FloatProperty, EnumProperty
 
 _STATE_KEY = 'arch_tools_shape_builder'
 _KEYMAP_KEY = 'arch_tools_shape_builder_keymaps'
@@ -296,7 +296,7 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
     bl_idname='view3d.arch_shape_builder'
     bl_label='Shape Builder'
     bl_description='Preview and combine enclosed regions from selected planar wires; Enter creates a new mesh, Esc cancels'
-    bl_options={'UNDO','BLOCKING'}
+    bl_options={'UNDO'}
     gap_snap: FloatProperty(name='Gap Snap (%)',default=.1,min=0,max=2,precision=3,
                            description='Treat tiny gaps as touching in the preview and new shape; 0 uses exact wires. Guides stay unchanged')
 
@@ -316,7 +316,9 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
         self._region=next(r for r in self._area.regions if r.type=='WINDOW')
         self._view=self._area.spaces.active.region_3d
         self._selected=set();self._hover=-1;self._painting=False;self._navigation=False
-        self._history=[];self._last_xy=None;self._dirty=True;self._alt=bool(event.alt)
+        self._history=[];self._last_xy=None;self._dirty=True
+        self._mode=context.window_manager.arch_shape_builder_mode
+        self._alt_held=bool(event.alt);self._alt=self._mode=='REMOVE' or self._alt_held
         self._adding=not self._alt;self._cursor_xy=None
         try:
             points,edges,self._sources=collect_selection(context)
@@ -340,7 +342,7 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
     def update_status(self):
         self._workspace.status_text_set(
             f'Shape Builder | {"REMOVE (-)" if self._alt else "ADD (+)"}: {len(self._selected)} selected / {len(self._arr["regions"])} regions'
-            '   |   Click/drag: add   Hold Alt + click/drag: remove   Enter: create   Esc: cancel   Ctrl+Z: undo stroke')
+            '   |   Click/drag: selected mode   Hold Alt: remove   Enter: create   Esc: cancel   Ctrl+Z: undo stroke')
 
     def hit(self,x,y):
         from bpy_extras.view3d_utils import region_2d_to_origin_3d,region_2d_to_vector_3d
@@ -352,12 +354,24 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
         t=(self._arr['origin']-origin).dot(self._arr['normal'])/denominator
         return region_at_world(self._arr,origin+direction*t)
 
+    def set_mode(self,mode):
+        self._mode=mode
+        self._alt=mode=='REMOVE' or self._alt_held
+        self._adding=not self._alt
+        self._painting=False;self._last_xy=None;self._dirty=True
+        self.update_status();self._area.tag_redraw()
+
+    def over_controls(self,event):
+        return any(region.type in {'UI','TOOLS','HEADER','TOOL_HEADER'}
+                   and region.width>2 and region.height>2
+                   and region.x<=event.mouse_x<region.x+region.width
+                   and region.y<=event.mouse_y<region.y+region.height
+                   for region in self._area.regions)
+
     def mouse(self,event):
-        for region in self._area.regions:
-            if (region.type in {'UI','TOOLS','HEADER','TOOL_HEADER'} and region.width>2 and region.height>2
-                    and region.x<=event.mouse_x<region.x+region.width
-                    and region.y<=event.mouse_y<region.y+region.height):
-                self._hover=-1;self._cursor_xy=None;self._last_xy=None;self._dirty=True;self._area.tag_redraw();return
+        if self.over_controls(event):
+            self._hover=-1;self._cursor_xy=None;self._last_xy=None
+            self._dirty=True;self._area.tag_redraw();return
         xy=Vector((event.mouse_x-self._region.x,event.mouse_y-self._region.y))
         self._cursor_xy=xy
         self._hover=self.hit(*xy)
@@ -376,12 +390,21 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
         if self._done:return {'CANCELLED'}
         if self._area.type!='VIEW_3D':self.finish();return {'CANCELLED'}
         alt=(event.value=='PRESS') if event.type in {'LEFT_ALT','RIGHT_ALT'} else bool(event.alt)
+        self._alt_held=alt
+        alt=self._mode=='REMOVE' or alt
         if alt!=self._alt:
             self._alt=alt;self._adding=not alt
             # Switching modifiers must not repaint the previous mouse segment.
             self._last_xy=None;self._dirty=True
             self.update_status();self._area.tag_redraw()
         if event.type in {'LEFT_ALT','RIGHT_ALT'}:return {'RUNNING_MODAL'}
+        # Let native sidebar buttons receive clicks while the preview stays live.
+        # End a stroke here so returning to the canvas cannot paint a bridge.
+        if self.over_controls(event):
+            self._painting=False;self._navigation=False;self._last_xy=None
+            self._hover=-1;self._cursor_xy=None;self._dirty=True
+            self._area.tag_redraw()
+            return {'PASS_THROUGH'}
         if event.type in {'ESC','RIGHTMOUSE'} and event.value=='PRESS':
             self.finish();return {'CANCELLED'}
         if event.type in {'RET','NUMPAD_ENTER'} and event.value=='PRESS':
@@ -470,6 +493,33 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
     def cancel(self,context):self.finish()
 
 
+_MODE_ITEMS=[('ADD','Add','Add regions to the preview'),
+             ('REMOVE','Remove','Remove regions from the preview; keep wire guides')]
+
+
+class VIEW3D_OT_harhtools_shape_mode(bpy.types.Operator):
+    bl_idname='view3d.harhtools_shape_mode'
+    bl_label='Shape Builder Mode'
+    bl_description='Choose how clicking or dragging changes the Shape Builder preview'
+    mode: EnumProperty(items=_MODE_ITEMS,default='ADD')
+
+    def execute(self,context):
+        context.window_manager.arch_shape_builder_mode=self.mode
+        state=bpy.app.driver_namespace.get(_STATE_KEY)
+        if state:state.set_mode(self.mode)
+        if context.area:context.area.tag_redraw()
+        return {'FINISHED'}
+
+
+def register_modes():
+    previous=getattr(bpy.types,VIEW3D_OT_harhtools_shape_mode.__name__,None)
+    if previous:bpy.utils.unregister_class(previous)
+    bpy.utils.register_class(VIEW3D_OT_harhtools_shape_mode)
+    if not hasattr(bpy.types.WindowManager,'arch_shape_builder_mode'):
+        bpy.types.WindowManager.arch_shape_builder_mode=EnumProperty(
+            name='Shape Builder Mode',items=_MODE_ITEMS,default='ADD',options={'SKIP_SAVE'})
+
+
 def _remove_shortcuts():
     # Search our own addon key bindings: driver_namespace resets on file load,
     # so it must not be the only place tracking addon registration resources.
@@ -488,6 +538,7 @@ def register():
     previous=getattr(bpy.types,VIEW3D_OT_arch_shape_builder.__name__,None)
     if previous:bpy.utils.unregister_class(previous)
     bpy.utils.register_class(VIEW3D_OT_arch_shape_builder)
+    register_modes()
     if not hasattr(bpy.types.WindowManager,'arch_shape_builder_gap_snap'):
         bpy.types.WindowManager.arch_shape_builder_gap_snap=FloatProperty(
             name='Gap Snap (%)',default=.1,min=0,max=2,soft_max=.5,precision=3,
@@ -504,5 +555,9 @@ def unregister():
     _remove_shortcuts()
     previous=getattr(bpy.types,VIEW3D_OT_arch_shape_builder.__name__,None)
     if previous:bpy.utils.unregister_class(previous)
+    previous=getattr(bpy.types,VIEW3D_OT_harhtools_shape_mode.__name__,None)
+    if previous:bpy.utils.unregister_class(previous)
+    if hasattr(bpy.types.WindowManager,'arch_shape_builder_mode'):
+        del bpy.types.WindowManager.arch_shape_builder_mode
     if hasattr(bpy.types.WindowManager,'arch_shape_builder_gap_snap'):
         del bpy.types.WindowManager.arch_shape_builder_gap_snap

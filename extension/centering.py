@@ -263,17 +263,20 @@ class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
         self.layout.label(text='', icon_value=icons.icon('heart'))
 
     def draw(self, context):
-        layout = self.layout
+        layout = self.layout.box()
+        state=bpy.app.driver_namespace.get('arch_tools_shape_builder')
         if getattr(bpy.types,'VIEW3D_OT_arch_shape_builder',None):
             row=layout.row();row.scale_y=1.25
-            row.operator('view3d.arch_shape_builder',text='Shape Builder  (Shift+M)',icon_value=icons.icon('shape'))
-            row=layout.row(align=True)
-            row.label(text='Add',icon_value=icons.icon('add'))
-            row.label(text='Alt: remove',icon_value=icons.icon('remove'))
-            layout.prop(context.window_manager,'arch_shape_builder_gap_snap')
+            row.operator('view3d.arch_shape_builder',text='Shape Builder  (Active)' if state else 'Shape Builder  (Shift+M)',icon_value=icons.icon('shape'),depress=bool(state))
+            mode=('REMOVE' if state._alt else 'ADD') if state else context.window_manager.arch_shape_builder_mode
+            row=layout.row(align=True);row.alignment='CENTER'
+            row.operator('view3d.harhtools_shape_mode',text='Add',icon_value=icons.icon('add'),depress=mode=='ADD').mode='ADD'
+            row.operator('view3d.harhtools_shape_mode',text='Remove',icon_value=icons.icon('remove'),depress=mode=='REMOVE').mode='REMOVE'
+            row=layout.row();row.enabled=not bool(state)
+            row.prop(context.window_manager,'arch_shape_builder_gap_snap')
             layout.separator()
         layout.label(text='Center to active',icon_value=icons.icon('heart'))
-        column=layout.column(align=True)
+        column=layout.column(align=True);column.enabled=not bool(state)
         column.operator('object.center_selected_to_active', text='Center Shapes to Active', icon_value=icons.icon('bounds')).center_method = 'BOUNDS'
         column.operator('object.center_selected_to_active', text='Match Origins to Active', icon_value=icons.icon('origin')).center_method = 'ORIGIN'
         row=layout.row();row.scale_y=.8

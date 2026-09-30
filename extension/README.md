@@ -7,10 +7,14 @@ Blender extension: Shape Builder and object centering.
 - Select all mesh/curve outlines that enclose the areas you want to fill.
 - Use **Shape Builder** in the panel, or **Shift+M** over the 3D View.
 - In Edit Mode, only selected visible mesh edges are used.
-- Hover to preview a region. Click or drag to choose adjoining regions.
+- Choose **Add** or **Remove** below Shape Builder; the selected mode stays lit.
+- Shape Builder lights up while its preview is active.
+- Hover to preview a region. Click or drag to apply the selected mode.
 - Hold Alt and click/drag to remove chosen regions from the preview. A pink
-  minus sign and stronger pink hover show removal mode; release Alt to add again.
-- Ordinary clicks add regions; clicking a chosen region keeps it selected.
+  minus sign and stronger pink hover show removal mode; release Alt to return
+  to the mode chosen in the panel.
+- In Add mode, clicking a chosen region keeps it selected.
+- The dark inset groups all harhtools controls without changing Blender's theme.
 - Ctrl+Z undoes a selection stroke; Backspace clears the chosen regions.
 - Enter creates a new Shape Builder object. Esc/right-click cancels.
 - Original wire guides remain unchanged.
