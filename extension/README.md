@@ -8,7 +8,9 @@ Blender extension: Shape Builder and object centering.
 - Use **Shape Builder** in the panel, or **Shift+M** over the 3D View.
 - In Edit Mode, only selected visible mesh edges are used.
 - Hover to preview a region. Click or drag to choose adjoining regions.
-- Click a chosen region again, or Alt-drag, to remove it from the preview.
+- Hold Alt and click/drag to remove chosen regions from the preview. A pink
+  minus sign and stronger pink hover show removal mode; release Alt to add again.
+- Ordinary clicks add regions; clicking a chosen region keeps it selected.
 - Ctrl+Z undoes a selection stroke; Backspace clears the chosen regions.
 - Enter creates a new Shape Builder object. Esc/right-click cancels.
 - Original wire guides remain unchanged.

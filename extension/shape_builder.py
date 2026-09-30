@@ -1,8 +1,8 @@
 """harhtools Shape Builder: selected planar mesh edges and curve outlines.
 
 Run this script once, then use harhtools > Shape Builder or Shift+M in 3D View.
-Hover previews a bounded region. Click/drag adds regions, Alt-drag removes them.
-Click a chosen region to remove it. Ctrl+Z undoes a stroke; Backspace clears.
+Hover previews a bounded region. Click/drag adds; hold Alt and click/drag to remove.
+Ordinary clicks keep chosen regions. Ctrl+Z undoes a stroke; Backspace clears.
 Enter creates a new mesh from the chosen regions. Esc/right-click cancels.
 Sources are never changed. In Edit Mode only selected visible edges are used.
 Gap Snap adds short connectors across tiny gaps in the preview/new shape only;
@@ -311,12 +311,13 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
         if bpy.app.driver_namespace.get(_STATE_KEY):
             self.report({'WARNING'},'Shape Builder is already active; Enter confirms, Esc cancels.')
             return {'CANCELLED'}
-        self._handler=None;self._done=False;self._area=context.area
+        self._handler=None;self._cursor_handler=None;self._done=False;self._area=context.area
         self._window=context.window;self._workspace=context.workspace
         self._region=next(r for r in self._area.regions if r.type=='WINDOW')
         self._view=self._area.spaces.active.region_3d
         self._selected=set();self._hover=-1;self._painting=False;self._navigation=False
-        self._history=[];self._last_xy=None;self._dirty=True
+        self._history=[];self._last_xy=None;self._dirty=True;self._alt=bool(event.alt)
+        self._adding=not self._alt;self._cursor_xy=None
         try:
             points,edges,self._sources=collect_selection(context)
             facing=self._view.view_rotation @ Vector((0,0,1))
@@ -325,6 +326,7 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
             self._arr=build_arrangement(points,edges,facing,self.gap_snap)
             self._shader=None;self._selected_batch=None;self._hover_batch=None
             self._handler=bpy.types.SpaceView3D.draw_handler_add(self.draw_overlay,(),'WINDOW','POST_VIEW')
+            self._cursor_handler=bpy.types.SpaceView3D.draw_handler_add(self.draw_cursor,(),'WINDOW','POST_PIXEL')
             bpy.app.driver_namespace[_STATE_KEY]=self
             bpy.app.handlers.load_pre.append(cancel_running)
             self._window.cursor_modal_set('CROSSHAIR')
@@ -337,8 +339,8 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
 
     def update_status(self):
         self._workspace.status_text_set(
-            f'Shape Builder: {len(self._selected)} selected / {len(self._arr["regions"])} regions'
-            '   |   Click/drag: add   Alt: remove   Enter: create   Esc: cancel   Ctrl+Z: undo stroke')
+            f'Shape Builder | {"REMOVE (-)" if self._alt else "ADD (+)"}: {len(self._selected)} selected / {len(self._arr["regions"])} regions'
+            '   |   Click/drag: add   Hold Alt + click/drag: remove   Enter: create   Esc: cancel   Ctrl+Z: undo stroke')
 
     def hit(self,x,y):
         from bpy_extras.view3d_utils import region_2d_to_origin_3d,region_2d_to_vector_3d
@@ -355,8 +357,9 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
             if (region.type in {'UI','TOOLS','HEADER','TOOL_HEADER'} and region.width>2 and region.height>2
                     and region.x<=event.mouse_x<region.x+region.width
                     and region.y<=event.mouse_y<region.y+region.height):
-                self._hover=-1;self._last_xy=None;self._dirty=True;self._area.tag_redraw();return
+                self._hover=-1;self._cursor_xy=None;self._last_xy=None;self._dirty=True;self._area.tag_redraw();return
         xy=Vector((event.mouse_x-self._region.x,event.mouse_y-self._region.y))
+        self._cursor_xy=xy
         self._hover=self.hit(*xy)
         if self._painting:
             start=self._last_xy if self._last_xy is not None else xy
@@ -372,6 +375,13 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
     def modal(self,context,event):
         if self._done:return {'CANCELLED'}
         if self._area.type!='VIEW_3D':self.finish();return {'CANCELLED'}
+        alt=(event.value=='PRESS') if event.type in {'LEFT_ALT','RIGHT_ALT'} else bool(event.alt)
+        if alt!=self._alt:
+            self._alt=alt;self._adding=not alt
+            # Switching modifiers must not repaint the previous mouse segment.
+            self._last_xy=None;self._dirty=True
+            self.update_status();self._area.tag_redraw()
+        if event.type in {'LEFT_ALT','RIGHT_ALT'}:return {'RUNNING_MODAL'}
         if event.type in {'ESC','RIGHTMOUSE'} and event.value=='PRESS':
             self.finish();return {'CANCELLED'}
         if event.type in {'RET','NUMPAD_ENTER'} and event.value=='PRESS':
@@ -384,9 +394,11 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
             self.report({'INFO'},f'Created {obj.name} from {count} region(s); wire guides kept.')
             return {'FINISHED'}
         if event.type=='Z' and event.ctrl and event.value=='PRESS':
+            self._painting=False;self._last_xy=None
             if self._history:self._selected=self._history.pop()
             self._dirty=True;self.update_status();self._area.tag_redraw();return {'RUNNING_MODAL'}
         if event.type=='BACK_SPACE' and event.value=='PRESS':
+            self._painting=False;self._last_xy=None
             self._history.append(self._selected.copy());self._selected.clear()
             self._dirty=True;self.update_status();self._area.tag_redraw();return {'RUNNING_MODAL'}
         if event.type=='MIDDLEMOUSE':
@@ -399,9 +411,10 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
         if event.type=='LEFTMOUSE':
             if event.value=='PRESS':
                 self.mouse(event);self._history.append(self._selected.copy())
-                self._adding=not(event.alt or self._hover in self._selected)
+                self._adding=not self._alt
                 self._painting=True;self._last_xy=None;self.mouse(event)
             elif event.value=='RELEASE':
+                if self._painting:self.mouse(event)
                 self._painting=False;self._last_xy=None
             return {'RUNNING_MODAL'}
         return {'RUNNING_MODAL'}
@@ -416,23 +429,39 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
                 coords=[self._arr['world'][v] for rid in ids for i in self._arr['regions'][rid]['triangles']
                         for v in self._arr['triangles'][i]]
                 return batch_for_shader(self._shader,'TRIS',{'pos':coords}) if coords else None
-            self._selected_batch=batch(self._selected)
-            self._hover_batch=batch([self._hover]) if self._hover>=0 else None
+            # Leave the hovered region out of the base layer so remove/add
+            # previews stay distinct instead of stacking translucent colors.
+            self._selected_batch=batch(self._selected-{self._hover})
+            hover_valid=self._hover>=0 and (not self._alt or self._hover in self._selected)
+            self._hover_batch=batch([self._hover]) if hover_valid else None
             self._dirty=False
         old_blend=gpu.state.blend_get();old_depth=gpu.state.depth_test_get();old_mask=gpu.state.depth_mask_get()
         try:
             gpu.state.blend_set('ALPHA');gpu.state.depth_test_set('NONE');gpu.state.depth_mask_set(False)
-            for batch,color in ((self._selected_batch,(.2,.7,1,.38)),(self._hover_batch,(.75,.4,1,.45))):
+            hover_color=(1,.30,.52,.62) if self._alt else (1,.94,.98,.5)
+            for batch,color in ((self._selected_batch,(1,.60,.76,.38)),(self._hover_batch,hover_color)):
                 if batch:
                     self._shader.bind();self._shader.uniform_float('color',color);batch.draw(self._shader)
         finally:
             gpu.state.blend_set(old_blend);gpu.state.depth_test_set(old_depth);gpu.state.depth_mask_set(old_mask)
+
+    def draw_cursor(self):
+        if (self._done or self._hover<0 or self._cursor_xy is None or self._navigation
+                or not bpy.context.area or bpy.context.area.as_pointer()!=self._area.as_pointer()):return
+        import blf
+        scale=bpy.context.preferences.system.ui_scale
+        blf.size(0,round(17*scale))
+        blf.color(0,*( (1,.60,.76,1) if self._alt else (1,.96,.99,1) ))
+        blf.position(0,self._cursor_xy.x+13*scale,self._cursor_xy.y-8*scale,0)
+        blf.draw(0,'\u2212' if self._alt else '+')
 
     def finish(self):
         if getattr(self,'_done',False):return
         self._done=True
         if self._handler:
             bpy.types.SpaceView3D.draw_handler_remove(self._handler,'WINDOW');self._handler=None
+        if getattr(self,'_cursor_handler',None):
+            bpy.types.SpaceView3D.draw_handler_remove(self._cursor_handler,'WINDOW');self._cursor_handler=None
         if bpy.app.driver_namespace.get(_STATE_KEY)==self:bpy.app.driver_namespace.pop(_STATE_KEY,None)
         if cancel_running in bpy.app.handlers.load_pre:bpy.app.handlers.load_pre.remove(cancel_running)
         try:self._window.cursor_modal_restore();self._workspace.status_text_set(None);self._area.tag_redraw()

@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "harhtools"
-version = "1.0.1"
+version = "1.0.2"
 name = "harhtools"
 tagline = "Build shapes from planar wires and align objects"
 maintainer = "harhtools"
@@ -10,4 +10,4 @@ blender_version_min = "4.2.0"
 license = ["SPDX:GPL-3.0-or-later"]
 
 [build]
-paths = ["__init__.py", "shape_builder.py", "centering.py", "README.md", "LICENSE"]
+paths = ["__init__.py", "shape_builder.py", "centering.py", "icons.py", "README.md", "LICENSE"]

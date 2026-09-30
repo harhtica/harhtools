@@ -16,6 +16,7 @@ import bpy
 from mathutils import Vector
 from bpy.props import EnumProperty
 import time
+from . import icons
 
 
 _NOTICE_KEY = 'arch_tools_center_notification'
@@ -258,15 +259,25 @@ class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
     bl_region_type = 'UI'
     bl_category = 'harhtools'
 
+    def draw_header(self, context):
+        self.layout.label(text='', icon_value=icons.icon('heart'))
+
     def draw(self, context):
         layout = self.layout
-        layout.label(text='Select the target last.')
-        layout.operator('object.center_selected_to_active', text='Center Shapes to Active', icon='PIVOT_BOUNDBOX').center_method = 'BOUNDS'
-        layout.operator('object.center_selected_to_active', text='Match Origins to Active', icon='PIVOT_ACTIVE').center_method = 'ORIGIN'
         if getattr(bpy.types,'VIEW3D_OT_arch_shape_builder',None):
-            layout.separator()
-            layout.operator('view3d.arch_shape_builder',text='Shape Builder  (Shift+M)',icon='MESH_DATA')
+            row=layout.row();row.scale_y=1.25
+            row.operator('view3d.arch_shape_builder',text='Shape Builder  (Shift+M)',icon_value=icons.icon('shape'))
+            row=layout.row(align=True)
+            row.label(text='Add',icon_value=icons.icon('add'))
+            row.label(text='Alt: remove',icon_value=icons.icon('remove'))
             layout.prop(context.window_manager,'arch_shape_builder_gap_snap')
+            layout.separator()
+        layout.label(text='Center to active',icon_value=icons.icon('heart'))
+        column=layout.column(align=True)
+        column.operator('object.center_selected_to_active', text='Center Shapes to Active', icon_value=icons.icon('bounds')).center_method = 'BOUNDS'
+        column.operator('object.center_selected_to_active', text='Match Origins to Active', icon_value=icons.icon('origin')).center_method = 'ORIGIN'
+        row=layout.row();row.scale_y=.8
+        row.label(text='Select the target last.')
 
 
 def register():

@@ -1,10 +1,11 @@
 """harhtools: planar Shape Builder and object centering for Blender."""
 
-from . import shape_builder, centering
+from . import icons, shape_builder, centering
 
 
 def register():
     try:
+        icons.register()
         shape_builder.register()
         centering.register()
     except Exception:
@@ -15,3 +16,4 @@ def register():
 def unregister():
     centering.unregister()
     shape_builder.unregister()
+    icons.unregister()
