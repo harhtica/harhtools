@@ -26,15 +26,12 @@ Installing this ZIP from disk alone does not subscribe to the public repository.
 
 See [tool controls](extension/README.md).
 
-## Publish the repository once
+## Public hosting
 
-The prepared `docs/` folder already contains a validated release and update feed.
-
-1. Create a public GitHub repository named **harhtools** and push this folder's contents.
-2. In GitHub Settings > Pages, choose **Deploy from a branch**, **main**, **/docs**.
-3. Wait for deployment. Append `index.json` to the site's published address;
-   this is the URL friends add to Blender.
-4. Verify that the URL returns JSON and its linked ZIP downloads before sharing it.
+[harhtica/harhtools](https://github.com/harhtica/harhtools) publishes its `docs/`
+folder through GitHub Pages: **Deploy from a branch**, **main**, **/docs**.
+The [download site](https://harhtica.github.io/harhtools/) and its update feed
+have been verified, including installation in a separate Blender profile.
 
 Only `docs/` is the published update site. There are no Blender scenes, screenshots,
 bridge credentials, or external Python dependencies in the extension package.

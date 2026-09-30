@@ -15,4 +15,14 @@ Version 1.0.1, tested with Blender 5.2 on Windows.
 
 Tests used a separate Blender profile and did not change the user's open scene.
 The manifest declares Blender 4.2+; only 5.2 has been tested.
-Public HTTPS hosting is still pending; this test used a local file repository.
+
+## Public release verification
+
+Published at https://harhtica.github.io/harhtools/index.json.
+
+- The HTTPS feed and ZIP downloaded successfully; ZIP size and SHA-256 matched
+  the tested local archive byte for byte.
+- A separate Blender profile installed and enabled harhtools from that public URL.
+- After restart, the panel, shortcuts, clean ring fill, and origin centering passed.
+- All 14 uploaded source/release files matched local Git blob hashes. The empty
+  `.nojekyll` marker has one harmless newline added by GitHub's editor.
