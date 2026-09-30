@@ -1,0 +1,18 @@
+# Release verification
+
+Version 1.0.1, tested with Blender 5.2 on Windows.
+
+- Blender extension build and validation passed.
+- Feed ZIP size and SHA-256 match the packaged release.
+- Rebuilding the same source preserves the published ZIP and checksum.
+- Installed a simulated 1.0.0 extension through a local repository URL.
+- Replaced that repository feed with 1.0.1; Blender's update command upgraded it.
+- Restarted Blender: extension enabled, harhtools panel loaded, both shortcuts present.
+- Shape Builder created a two-face planar ring with its hole preserved.
+- Origin centering moved a test object, then detected ALREADY CENTERED on repetition.
+- After clearing the runtime namespace (as happens when loading a blend), disabling
+  removed the panel, operator, shortcuts, and property; re-enabling succeeded.
+
+Tests used a separate Blender profile and did not change the user's open scene.
+The manifest declares Blender 4.2+; only 5.2 has been tested.
+Public HTTPS hosting is still pending; this test used a local file repository.
