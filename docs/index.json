@@ -7,7 +7,7 @@
       "id": "harhtools",
       "name": "harhtools",
       "tagline": "Build shapes from planar wires and align objects",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "type": "add-on",
       "maintainer": "harhtools",
       "license": [
@@ -18,9 +18,9 @@
         "Mesh",
         "Object"
       ],
-      "archive_url": "./harhtools-1.0.2.zip",
-      "archive_size": 27874,
-      "archive_hash": "sha256:6d559f7ba6572d6817a54edc2f9a85119d5583af947ce3c427424dff80a6df41"
+      "archive_url": "./harhtools-1.0.3.zip",
+      "archive_size": 28512,
+      "archive_hash": "sha256:1a4f3eb48ab2bc16d19dcafdf6c496a827226c6ff1ef04347b0a0fb75a2a39fe"
     }
   ]
 }
