@@ -1,11 +1,11 @@
-# harhtools 1.6.3
+# harhtools 1.7.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.6.3.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.7.0.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -95,6 +95,16 @@ inside the shape to preview an inset. Choose **Outside** to drag an outward bord
 Flat boundaries can be rotated or placed away from the world origin. Plane
 validation uses double-precision calculations and does not flatten source data.
 
+**Corners: Sharp** is the default. Adjacent parallel offset edges meet at a sharp
+point, keeping Gothic tips pointed. Acute tips extend to their proper intersection;
+they are not clamped or rounded. Choose **Round** for circular opening-corner joins.
+
+**Result: Mesh Border** is the default. It creates connected border faces with
+consistent normals and aspect-preserving planar UVs, ready for mesh editing or
+extrusion. Corresponding boundaries form quad strips; tight junctions use validated
+triangles where needed. The center remains hollow. **Curve Outline** retains the
+previous filled POLY-curve output when a curve result is wanted.
+
 Enable **Snap to Geometry**, or press **S** while the preview is active. Drag near
 an unselected visible curve or mesh edge on the same plane; the target determines
 the even border thickness. A target on the wrong side of a shape cannot set that
@@ -112,13 +122,11 @@ and hidden by default so their filled centers do not obscure the new border.
 Uncheck **Hide Original Shapes** to keep them visible. Outputs stay in the sources'
 collections and inherit their materials. No library preset is saved automatically.
 
-The result is a filled, editable **POLY Curve** with closed border splines. Bezier
-inputs are adaptively sampled with a recorded world-space error bound; the new
-offset is not an exact Bezier curve. Dense mesh/poly boundaries are simplified
+Bezier inputs are adaptively sampled with a recorded world-space error bound;
+the new offset is not an exact Bezier curve. Dense mesh/poly boundaries are simplified
 within the same recorded tolerance while preserving corners. Original source
 data stays intact. The preview uses lighter sampling; confirmation rebuilds at
-final precision. Opening corners
-use circular joins to avoid long spikes. Widths that collapse tips, cross boundaries,
+final precision. Widths that collapse tips, cross boundaries,
 or merge holes are rejected, with the original shape preserved. NURBS, open paths,
 nonplanar shapes and ambiguous intersecting source loops are not supported.
 

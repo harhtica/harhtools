@@ -15,6 +15,7 @@ TESTS = (
     'test_builder_curve_output.py',
     'test_mocked_gpu_caches.py',
     'test_outline_geometry.py',
+    'test_outline_mesh.py',
     'test_outline_snap.py',
     'test_outline_tool.py',
     'test_outline_interaction.py',

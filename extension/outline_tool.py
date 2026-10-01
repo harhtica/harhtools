@@ -33,6 +33,12 @@ class HARHTOOLS_PG_outline(bpy.types.PropertyGroup):
     direction: EnumProperty(name='Direction', default='INWARD', items=[
         ('INWARD', 'Inside', 'Create a border inside the original shape'),
         ('OUTWARD', 'Outside', 'Create a border outside the original shape')], update=_changed)
+    join_style: EnumProperty(name='Corners', default='MITER', items=[
+        ('MITER', 'Sharp', 'Intersect offset edges to keep pointed corners sharp'),
+        ('ROUND', 'Round', 'Use circular joins where corners open')], update=_changed)
+    output_type: EnumProperty(name='Result', default='MESH', items=[
+        ('MESH', 'Mesh Border', 'Connected border faces ready for mesh editing and extrusion'),
+        ('CURVE', 'Curve Outline', 'A filled outline with sampled Poly spline boundaries')])
     snap_geometry: BoolProperty(name='Snap to Geometry', default=False,
                                 description='Snap thickness to nearby coplanar curves and mesh edges while dragging', update=_snap_changed)
     hide_sources: BoolProperty(name='Hide Original Shapes', default=True,
@@ -77,23 +83,30 @@ def prepare_selection(context):
     return objects, prepared
 
 
-def make_results(prepared, thickness, direction):
-    return [outline_geometry.build_outline(item, thickness, direction=direction) for item in prepared]
+def make_results(prepared, thickness, direction, join_style='ROUND'):
+    return [outline_geometry.build_outline(item, thickness, direction=direction, join_style=join_style) for item in prepared]
 
 
-def commit_outlines(context, sources, results, expected_signature, *, hide_sources=True):
+def commit_outlines(context, sources, results, expected_signature, *, hide_sources=True, output_type='CURVE'):
     """Build all data first; cancellation/failure never leaves partial outlines."""
     if not sources or len(sources) != len(results):
         raise ValueError('Every selected source needs one valid outline result.')
     if source_signature(sources) != expected_signature:
         raise ValueError('An original shape changed. Restart Make Outline before confirming.')
+    if output_type == 'MESH':
+        from . import outline_mesh
+        create_data = outline_mesh.make_mesh_data
+    elif output_type == 'CURVE':
+        create_data = outline_geometry.make_curve_data
+    else:
+        raise ValueError('Outline result must be Mesh Border or Curve Outline.')
     data_blocks = []; outputs = []
     old_selection = list(context.selected_objects)
     old_active = context.view_layer.objects.active
     hidden = [(obj, obj.hide_get()) for obj in sources]
     try:
         for source, result in zip(sources, results):
-            data_blocks.append(outline_geometry.make_curve_data(result, name=source.name + ' Outline'))
+            data_blocks.append(create_data(result, name=source.name + ' Outline'))
         for source, result, data in zip(sources, results, data_blocks):
             obj = bpy.data.objects.new(source.name + ' Outline', data); outputs.append(obj)
             obj.matrix_world = result['matrix_world']
@@ -120,7 +133,7 @@ def commit_outlines(context, sources, results, expected_signature, *, hide_sourc
             bpy.data.objects.remove(obj, do_unlink=True)
         for data in data_blocks:
             if data.users == 0:
-                bpy.data.curves.remove(data)
+                (bpy.data.meshes if isinstance(data, bpy.types.Mesh) else bpy.data.curves).remove(data)
         for obj, was_hidden in hidden:
             obj.hide_set(was_hidden)
         for obj in old_selection:
@@ -212,8 +225,9 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         try:
             sources, prepared = prepare_selection(context)
             cfg = settings(context)
-            results = make_results(prepared, cfg.thickness, cfg.direction)
-            outputs = commit_outlines(context, sources, results, source_signature(sources), hide_sources=cfg.hide_sources)
+            results = make_results(prepared, cfg.thickness, cfg.direction, cfg.join_style)
+            outputs = commit_outlines(context, sources, results, source_signature(sources),
+                                      hide_sources=cfg.hide_sources, output_type=cfg.output_type)
             self.report({'INFO'}, f'Created {len(outputs)} outline(s). Shape Library saves only with +.')
             return {'FINISHED'}
         except Exception as exc:
@@ -233,7 +247,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         self._region = next(r for r in self._area.regions if r.type == 'WINDOW')
         self._view = self._area.spaces.active.region_3d
         cfg = settings(context)
-        self._original_settings = (cfg.thickness, cfg.direction, cfg.snap_geometry)
+        self._original_settings = (cfg.thickness, cfg.direction, cfg.snap_geometry, cfg.join_style, cfg.output_type)
         try:
             self._sources, self._prepared = prepare_selection(context)
             # Dragging uses a lighter outline. Confirmation recomputes the
@@ -293,7 +307,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         if self._done:
             return
         cfg = settings(context)
-        key = (float(cfg.thickness), cfg.direction)
+        key = (float(cfg.thickness), cfg.direction, cfg.join_style)
         self._preview_dirty = False
         if key == getattr(self, '_preview_key', None):
             return  # Identical valid or invalid widths do not need another solve.
@@ -301,7 +315,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         try:
             prepared = [preview if cfg.thickness > preview['tolerance'] * 8 else precise
                         for preview, precise in zip(self._preview_prepared, self._prepared)]
-            self._results = make_results(prepared, cfg.thickness, cfg.direction)
+            self._results = make_results(prepared, cfg.thickness, cfg.direction, cfg.join_style)
             self._error = ''
         except Exception as exc:
             self._results = []; self._error = str(exc)
@@ -386,9 +400,9 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
                 # validate the CURRENT precise shape, not a stale preview error.
                 self.flush_pending(context, preview=False)
                 cfg = settings(context)
-                results = make_results(self._prepared, cfg.thickness, cfg.direction)
+                results = make_results(self._prepared, cfg.thickness, cfg.direction, cfg.join_style)
                 outputs = commit_outlines(context, self._sources, results, self._signature,
-                                          hide_sources=cfg.hide_sources)
+                                          hide_sources=cfg.hide_sources, output_type=cfg.output_type)
             except Exception as exc:
                 self._error = str(exc)
                 self.report({'ERROR'}, self._error); return {'RUNNING_MODAL'}
@@ -487,7 +501,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             pass
         if cancel and context is not None:
             cfg = settings(context)
-            cfg.thickness, cfg.direction, cfg.snap_geometry = self._original_settings
+            cfg.thickness, cfg.direction, cfg.snap_geometry, cfg.join_style, cfg.output_type = self._original_settings
 
 
 def cancel_running(*_args):
@@ -500,6 +514,7 @@ def draw_panel(layout, context):
     box = layout.box(); box.label(text='Make Outline')
     cfg = settings(context); state = bpy.app.driver_namespace.get(STATE_KEY)
     box.prop(cfg, 'thickness'); box.prop(cfg, 'direction')
+    box.prop(cfg, 'join_style'); box.prop(cfg, 'output_type')
     box.prop(cfg, 'snap_geometry'); box.prop(cfg, 'hide_sources')
     row = box.row(); row.enabled = state is None
     row.operator('view3d.harhtools_make_outline', text='Make Outline', icon='MOD_SOLIDIFY')

@@ -44,7 +44,9 @@ def select(*objects):
 source = square('Outline source'); select(source)
 material = bpy.data.materials.new('Outline material'); source.data.materials.append(material)
 signature = ot.source_signature([source]); original = source.data
-cfg = ot.settings(); cfg.thickness = .2; cfg.direction = 'INWARD'
+cfg = ot.settings(); cfg.thickness = .2; cfg.direction = 'INWARD'; cfg.output_type = 'CURVE'
+assert cfg.bl_rna.properties['output_type'].default == 'MESH'
+assert cfg.bl_rna.properties['join_style'].default == 'MITER'
 capture = ext.shape_library.capture_shape
 def forbidden(*args, **kwargs):
     raise AssertionError('Outline must never save a library preset')
@@ -63,6 +65,22 @@ evaluated.to_mesh_clear()
 checks.append('operator creates a filled border, preserves materials/source and hides original')
 assert not ext.shape_library._catalog
 checks.append('outline creation does not capture library presets')
+
+mesh_source = square('Mesh border source'); select(mesh_source)
+mesh_source.data.materials.append(material)
+mesh_signature = ot.source_signature([mesh_source])
+cfg.output_type = 'MESH'; cfg.direction = 'OUTWARD'; cfg.join_style = 'MITER'
+assert bpy.ops.view3d.harhtools_make_outline('EXEC_DEFAULT') == {'FINISHED'}
+mesh_output = bpy.context.active_object
+assert mesh_output.type == 'MESH' and len(mesh_output.data.polygons) == 4
+assert all(len(face.vertices) == 4 and face.normal.z > .999 for face in mesh_output.data.polygons)
+assert len(mesh_output.data.vertices) == 8 and len(mesh_output.data.edges) == 12
+assert abs(sum(face.area for face in mesh_output.data.polygons) - 1.76) < 1e-5
+assert list(mesh_output.data.materials) == [material] and mesh_output.users_collection == mesh_source.users_collection
+assert mesh_output.data.uv_layers and mesh_source.hide_get()
+assert ot.source_signature([mesh_source]) == mesh_signature and not ext.shape_library._catalog
+checks.append('Sharp Mesh Border creates four connected quads, keeps materials/UVs/source and saves no preset')
+cfg.output_type = 'CURVE'; cfg.direction = 'INWARD'
 
 left = square('Left', -4); right = square('Right', 4); select(left, right)
 sources, prepared = ot.prepare_selection(bpy.context)
@@ -106,6 +124,27 @@ finally: og.make_curve_data = real_make
 assert set(bpy.data.objects) == old_objects and set(bpy.data.curves) == old_curves
 assert all(o.select_get() and not o.hide_get() for o in sources)
 checks.append('failed second output rolls back all data and restores selection/visibility')
+
+from extension import outline_mesh as om
+old_meshes = set(bpy.data.meshes)
+real_mesh_make = om.make_mesh_data; calls.clear()
+def fail_second_mesh(*args, **kwargs):
+    calls.append(True)
+    if len(calls) == 2:
+        raise ValueError('injected second mesh failure')
+    return real_mesh_make(*args, **kwargs)
+om.make_mesh_data = fail_second_mesh
+try:
+    try:
+        ot.commit_outlines(bpy.context, sources, ot.make_results(prepared, .1, 'OUTWARD', 'MITER'),
+                           signature, output_type='MESH')
+    except ValueError: pass
+    else: raise AssertionError('Expected mesh batch failure')
+finally:
+    om.make_mesh_data = real_mesh_make
+assert set(bpy.data.objects) == old_objects and set(bpy.data.meshes) == old_meshes
+assert all(o.select_get() and not o.hide_get() for o in sources)
+checks.append('failed second mesh rolls back new meshes without altering source visibility/selection')
 
 left.data.splines[0].points[0].co.x += .1
 try: ot.commit_outlines(bpy.context, sources, results, signature)

@@ -257,6 +257,77 @@ assert len(result['offset_loops'])==1 and evaluated_area(result)>0
 check_width(prepared,result,.05,prepared['tolerance']*1.1)
 REPORTS.append({'case':'pointed arch dense arc offsets trim cleanly at convex apex'})
 
+def world_xy(prepared,loop):
+    return [tuple(prepared['_origin64'][i]+prepared['_u64'][i]*x+prepared['_v64'][i]*y for i in range(3)) for x,y in loop]
+
+# A sharp join is the intersection of parallel edge offsets, not a round cap
+# or a clamped miter. This analytic triangle has an arbitrarily acute apex.
+for height in (5.,100.):
+    source=poly('Acute sharp tip '+str(height),[[(-1,0),(1,0),(0,height)]])
+    before=source_snapshot(source);prepared=og.prepare_sources([source]);width=.1
+    result=og.build_outline(prepared,width,direction='OUTWARD',join_style='MITER')
+    assert len(result['offset_loops'][0])==3 and result['offset_correspondence']==[[0,1,2]]
+    tip=max(world_xy(prepared,result['offset_loops'][0]),key=lambda p:p[1])
+    expected=height+width*math.sqrt(height*height+1)
+    assert abs(tip[0])<1e-10 and abs(tip[1]-expected)<1e-10,(tip,expected)
+    assert result['diagnostics']['round_join_chord_error_bound']==0
+    assert source_snapshot(source)==before
+    REPORTS.append({'case':f'MITER preserves acute {height:g}-unit tip without rounding or clamping','tip_extension':tip[1]-height})
+
+# The sampled Gothic arch approaches the analytic tangent-defined apex within
+# 0.1 mm at this scale; ROUND remains an explicitly different corner option.
+prepared=og.prepare_sources([obj]);sharp=og.build_outline(prepared,.05,direction='OUTWARD',join_style='MITER')
+rounded=og.build_outline(prepared,.05,direction='OUTWARD',join_style='ROUND')
+sharp_tip=max(p[1] for loop in sharp['offset_loops'] for p in world_xy(prepared,loop))
+round_tip=max(p[1] for loop in rounded['offset_loops'] for p in world_xy(prepared,loop))
+assert abs(sharp_tip-(1+math.sqrt(3)+.05*2/math.sqrt(3)))<1e-4,(sharp_tip,round_tip,prepared['tolerance'])
+assert sharp_tip-round_tip>.005,(sharp_tip,round_tip)
+assert sharp['offset_correspondence'][0] is not None and not sharp['offset_trimmed'][0]
+inward=og.build_outline(prepared,.05,join_style='MITER')
+assert inward['offset_trimmed'][0] and inward['offset_correspondence'][0] is None
+for result in (sharp,inward):
+    expected=abs(sum(og._area(loop) for loop in result['border_loops']))
+    assert abs(evaluated_area(result)-expected)/expected<1e-4
+REPORTS.append({'case':'curved Gothic arch sharp apex, optional ROUND and trimmed sharp inward fill','sharp_tip':sharp_tip,'round_tip':round_tip})
+
+source=poly('Sharp concave L',[[(0,0),(3,0),(3,1),(1,1),(1,3),(0,3)]])
+prepared=og.prepare_sources([source])
+for direction in ('INWARD','OUTWARD'):
+    result=og.build_outline(prepared,.15,direction=direction,join_style='MITER')
+    assert len(result['offset_loops'][0])==6 and result['offset_correspondence'][0]==list(range(6))
+    expected=abs(sum(og._area(loop) for loop in result['border_loops']))
+    assert abs(evaluated_area(result)-expected)<1e-5
+REPORTS.append({'case':'sharp concave corners preserve closed topology in both directions'})
+
+# Adjacent short segments overrun a concave corner, requiring CDT cleanup in
+# the same loop as a long sharp apex. Cleanup must retain that legitimate miter
+# extension even though it lies farther than width from the original boundary.
+corners=[(0,0),(3,0),(3,1),(1,1),(1,2),(2,2),(0,20),(-2,2),(0,2)]
+dense=[]
+for a,b in zip(corners,corners[1:]+corners[:1]):
+    count=math.ceil(math.dist(a,b)/.04)
+    dense.extend((a[0]+(b[0]-a[0])*i/count,a[1]+(b[1]-a[1])*i/count) for i in range(count))
+source=poly('Sharp apex beside offset overrun',[dense]);prepared=og.prepare_sources([source])
+# Polyline simplification normally removes collinear subdivision. Retain it in
+# this focused cleanup fixture to exercise the short-edge overrun explicitly.
+inverse=prepared['matrix_world'].inverted()
+prepared['loops']=[[(p.x,p.y) for p in (inverse@Vector((x,y,0)) for x,y in dense)]]
+result=og.build_outline(prepared,.1,direction='OUTWARD',join_style='MITER')
+assert result['offset_trimmed'][0] and result['offset_correspondence'][0] is None
+tip=max(p[1] for p in world_xy(prepared,result['offset_loops'][0]))
+assert abs(tip-(20+.1*math.sqrt(18*18+4)/2))<prepared['tolerance']*.1
+expected=abs(sum(og._area(loop) for loop in result['border_loops']))
+assert abs(evaluated_area(result)-expected)/expected<1e-4
+REPORTS.append({'case':'CDT concave overrun cleanup retains long valid miter apex','tip':tip})
+
+source=poly('Sharp hole',[square,[(-1,-1),(1,-1),(1,1),(-1,1)]])
+prepared=og.prepare_sources([source]);result=og.build_outline(prepared,.2,direction='OUTWARD',join_style='MITER')
+assert all(len(loop)==4 for loop in result['offset_loops']) and abs(evaluated_area(result)-4.8)<1e-5
+rejects(lambda:og.build_outline(prepared,.2,join_style='BEVEL'),'Join style')
+source=poly('Sharp genuine collapse',[[(-1,0),(1,0),(0,5)]])
+prepared=og.prepare_sources([source]);rejects(lambda:og.build_outline(prepared,1.,join_style='MITER'))
+REPORTS.append({'case':'sharp hole fill is hollow and genuine sharp collapse remains rejected'})
+
 # A complete Gothic four-lobe construction, through the actual Shape Builder
 # output path. Outside offsets must remove inverted concave-notch fragments,
 # remain hollow when Blender evaluates them, and work after mesh conversion.
@@ -306,6 +377,14 @@ for source in [union_obj,mesh_obj]:
                 # Same preparation basis is independent of sampling tolerance.
                 assert min(math.dist(p,q) for q in preview['loops'][0])<1e-7
         REPORTS.append({'case':'dense mesh preview chord bound and sharp cusp preservation'})
+    for width in (.05,.14):
+        before=source_snapshot(source);start=time.perf_counter()
+        result=og.build_outline(precise,width,direction='OUTWARD',join_style='MITER');elapsed=time.perf_counter()-start
+        expected=abs(sum(og._area(loop) for loop in result['border_loops']));filled=evaluated_area(result)
+        assert len(result['border_loops'])==2 and abs(filled-expected)/expected<1e-4
+        assert elapsed<2. and source_snapshot(source)==before
+        check_width(precise,result,width,precise['tolerance']*3.1,max_samples=256)
+        REPORTS.append({'case':f'Gothic sharp {width} outside {source.type}','seconds':elapsed,'evaluated_area':filled,'trimmed':result['offset_trimmed']})
 
 directory=Path(__file__).parent/'_artifacts';directory.mkdir(exist_ok=True)
 (directory/'outline_geometry_report.json').write_text(json.dumps(REPORTS,indent=2))

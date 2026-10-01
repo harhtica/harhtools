@@ -2,8 +2,9 @@
 
 Original Bezier boundaries are adaptively sampled with a control-hull chord
 error bound; dense polylines use the same bounded chord simplification. Result
-curves are explicitly POLY splines, not claimed exact cubic offsets. Round joins
-avoid outward miter spikes. Concave offset overlaps are classified by actual
+curves are explicitly POLY splines, not claimed exact cubic offsets. Miter joins
+preserve pointed corners; optional round joins bound circular chord error.
+Concave offset overlaps are classified by actual
 source-boundary distance. Invalid collapse raises before any data is made.
 """
 import math
@@ -259,7 +260,7 @@ def prepare_sources(objects,*,tolerance=None):
             '_origin64':origin64,'_u64':u64,'_v64':v64,'_normal64':normal64,
             'tolerance':tolerance,'epsilon':epsilon,'depths':depths,'matrix_world':matrix}
 
-def _offset_loop(loop,distance,tolerance,epsilon):
+def _offset_loop(loop,distance,tolerance,epsilon,join_style='ROUND'):
     result=[]
     for index,point in enumerate(loop):
         previous=loop[index-1];following=loop[(index+1)%len(loop)]
@@ -271,7 +272,7 @@ def _offset_loop(loop,distance,tolerance,epsilon):
         a=_add(point,_mul(n0,distance));b=_add(point,_mul(n1,distance))
         turn=math.atan2(_cross(incoming,outgoing),_dot(incoming,outgoing))
         if abs(turn)<1e-10:result.append(a);continue
-        if turn*distance<0:
+        if turn*distance<0 and join_style=='ROUND':
             # The offset opens this corner: a circular join has no miter spike.
             radius=abs(distance)
             max_angle=2*math.acos(max(-1,min(1,1-tolerance/radius)))
@@ -374,25 +375,33 @@ def _trim_offset_overruns(loop,orientation,epsilon,max_trim_distance,original=No
     if (_area(result)>0)!=(orientation>0):result.reverse()
     return result,True
 
-def build_outline(prepared,thickness,*,direction='INWARD'):
+def build_outline(prepared,thickness,*,direction='INWARD',join_style='ROUND'):
     """Build a validated border result; creates no Blender datablocks.
 
     Topology-changing offsets (collapsed tips, merged holes, self-crossings) are
     deliberately rejected. Reducing thickness retains the original topology.
+    MITER intersects adjacent offset lines without rounding, beveling, or a
+    miter-length clamp. ROUND retains the circular opening-corner join.
     """
     thickness=float(thickness);direction=str(direction).upper()
     if direction not in {'INWARD','OUTWARD'}:raise ValueError('Direction must be INWARD or OUTWARD.')
+    join_style=str(join_style).upper()
+    if join_style not in {'MITER','ROUND'}:raise ValueError('Join style must be MITER or ROUND.')
     if not math.isfinite(thickness) or thickness<=0:raise ValueError('Outline thickness must be positive and finite.')
     tolerance=prepared['tolerance'];epsilon=prepared['epsilon']
     if thickness<=4*tolerance:
         raise ValueError(f'Thickness is below the current sampling precision. Use more than {4*tolerance:.6g} world units or prepare with a smaller tolerance.')
     distance=thickness if direction=='INWARD' else -thickness
     originals=prepared['loops']
-    offsets=[];trimmed=0
+    offsets=[];trimmed=0;correspondence=[];trimmed_loops=[]
     for loop in originals:
-        raw=_offset_loop(loop,distance,tolerance,epsilon)
+        raw=_offset_loop(loop,distance,tolerance,epsilon,join_style)
         cleaned,changed=_trim_offset_overruns(raw,1 if _area(loop)>0 else -1,epsilon,4*thickness,loop,distance)
         offsets.append(cleaned);trimmed+=int(changed)
+        trimmed_loops.append(changed)
+        # Direct strips are safe only when every original corner still has its
+        # own offset intersection. CDT cleanup can change start/order/count.
+        correspondence.append(list(range(len(loop))) if join_style=='MITER' and not changed and len(cleaned)==len(loop) else None)
     if sum(map(len,offsets))>MAX_POINTS:raise ValueError('Offset detail exceeds the sampling budget. Increase sampling tolerance.')
     _validate_simple(offsets,epsilon,'Thickness makes offset boundaries cross or touch. Reduce thickness; no source geometry was changed.')
     for old,new in zip(originals,offsets):
@@ -420,8 +429,10 @@ def build_outline(prepared,thickness,*,direction='INWARD'):
     border=([list(loop) for loop in originals]+[list(reversed(loop)) for loop in offsets]
             if direction=='INWARD' else [list(loop) for loop in offsets]+[list(reversed(loop)) for loop in originals])
     return {'border_loops':border,'offset_loops':offsets,'source_loops':originals,
-            'matrix_world':prepared['matrix_world'].copy(),'thickness':thickness,'direction':direction,
-            'diagnostics':{'source_chord_error_bound':tolerance,'round_join_chord_error_bound':tolerance,
+            'matrix_world':prepared['matrix_world'].copy(),'thickness':thickness,'direction':direction,'join_style':join_style,
+            'offset_correspondence':correspondence,'offset_trimmed':trimmed_loops,
+            'diagnostics':{'source_chord_error_bound':tolerance,'round_join_chord_error_bound':tolerance if join_style=='ROUND' else 0.0,
+                           'join_style':join_style,
                            'minimum_validated_clearance':clearance,'source_loop_count':len(originals),
                            'offset_loop_count':len(offsets),'poly_points':sum(map(len,border)),
                            'trimmed_offset_intersections':trimmed,'topology_preserved':True,'editable_type':'POLY'}}

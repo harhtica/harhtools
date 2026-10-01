@@ -1,5 +1,27 @@
 # Release verification
 
+## Version 1.7.0
+
+- Sharp miter joins intersect adjacent parallel offset lines without a bevel,
+  rounding fallback or miter clamp. Acute analytic tips, Gothic arches, holes,
+  concave junction cleanup and genuine collapse rejection are covered.
+- Make Outline defaults to a mesh border. Corresponding loops form quad strips;
+  changed junctions use constrained triangles merged into valid convex quads.
+  The writer checks hollow topology, boundary preservation, used vertices,
+  consistent winding and area before creating a Blender mesh with planar UVs.
+- The saved 492-point arch at Outside 0.002 m produces 486 convex quads and four
+  junction triangles. No duplicate/loose vertices, gaps or overlaps were found;
+  all four triangle angles are at least 20 degrees. The sharp outer tips agree
+  with analytic offset-line intersections within 2.5e-9 world units.
+- Its native mesh matches expected ring area within 8.25e-9 relative error and
+  all 32,400 coverage probes, keeping the original interior empty. Rendered
+  wireframe strips were visually checked. Original source geometry is unchanged.
+- Mesh transaction failures roll back every new object/datablock. Corner changes
+  refresh the preview, while cancellation restores corner and result settings.
+- Normal extrusion of the saved arch by 0.005 m produces a watertight frame;
+  volume matches ring area times depth within 1.68e-8 relative error, and rays
+  through its original opening remain clear. All 17 regression suites passed.
+
 ## Version 1.6.3
 
 - Reproduced the reported flatness error on the newly saved, translated Gothic

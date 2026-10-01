@@ -110,9 +110,9 @@ fake_bpy = SimpleNamespace(app=bpy.app, context=context, utils=bpy.utils,
 real_make = ot.make_results
 build_calls = []
 commit_calls = []
-def counted_make(prepared, thickness, direction):
+def counted_make(prepared, thickness, direction, join_style='ROUND'):
     build_calls.append((prepared, float(thickness), direction))
-    return real_make(prepared, thickness, direction)
+    return real_make(prepared, thickness, direction, join_style)
 def counted_commit(ctx, sources, results, signature, **kwargs):
     commit_calls.append((results, signature, kwargs))
     return [source]
@@ -203,6 +203,15 @@ try:
         assert len(build_calls) == start_builds
         CHECKS.append('RNA slider changes coalesce; toggling snap does not rebuild unchanged geometry')
 
+        start_builds = len(build_calls)
+        cfg.join_style = 'ROUND'
+        tick(h)
+        assert len(build_calls) == start_builds + 1 and h._results[0]['join_style'] == 'ROUND'
+        cfg.join_style = 'MITER'
+        tick(h)
+        assert len(build_calls) == start_builds + 2 and h._results[0]['join_style'] == 'MITER'
+        CHECKS.append('changing corner style invalidates the preview even at the same width')
+
         cfg.thickness = 1.2
         tick(h)
         assert h._error and not h._results
@@ -236,10 +245,12 @@ try:
         h.modal(context, event('LEFTMOUSE', 'PRESS', 800))
         h.modal(context, event('MOUSEMOVE', x=700))
         with patch.object(h, 'over_controls', return_value=True):
+            cfg.join_style = 'ROUND'; cfg.output_type = 'CURVE'
             assert h.modal(context, event('ESC', 'PRESS')) == {'CANCELLED'}
         assert manager.removed.count(token) == 1 and not draw_handlers
         assert bpy.app.driver_namespace.get(ot.STATE_KEY) is None
         assert abs(cfg.thickness - .1) < 1e-6
+        assert cfg.join_style == 'MITER' and cfg.output_type == 'MESH'
         CHECKS.append('Escape over sidebar cancels queued work, removes timer/handlers and restores settings')
 
         source.matrix_world = (Matrix.Translation((1234.567, -876.543, 987.654))
