@@ -1,5 +1,31 @@
 # Release verification
 
+## Version 1.11.0
+
+- All 28 regression suites passed in separate background Blender 5.2 processes.
+- Profile-panel tests prohibit native geometry generation and preview allocation
+  during drawing. All 14 architectural thumbnails are generated on a coalesced
+  timer in Edit Mode, with source coordinates/selection and ID counts unchanged.
+  Loading/failure placeholders keep the rest of the panel available. Make Outline
+  precedes the bevel section, and the one-time UI migration starts Add Bevel off.
+- Native point editing forks a preset on the first shape edit, not on point
+  selection. Tests verify unchanged built-ins, independent user copies, actual
+  modifier and thumbnail changes, retained custom profiles through blend-library
+  serialization and removal of unmodified drafts.
+- Selected Arc tests exercise manual vertex-edit event pass-through, native
+  transform guards, selection recapture, recovery from invalid selections,
+  world-space spacing under nonuniform object scale, local resampling and exact
+  preservation of unselected joins. A 64-point-circle fixture produces 24 points
+  for a 90-degree arc and 69 for 270 degrees at its untouched neighbors' spacing.
+  Escape restores the last manual-edit baseline. A 2048-point slider update took
+  about 5 ms on the synthetic fixture; this is not a viewport FPS measurement.
+- Stud fields round-trip against the 0.28-metre conversion at three scene scales,
+  including negative array gaps. Geometry, transforms and unit scale do not
+  change. Reload snapshots exclude derived display fields.
+- Validation is headless/native API plus simulated draw/event restrictions.
+  The user's desktop was not operated, and the user blend file was not saved or
+  reverted. Interactive GPU drawing has not been visually verified here.
+
 ## Version 1.10.0
 
 - Reproduced the partial-overlap error on the six selected, closed semicircles
@@ -18,7 +44,7 @@
   The thumbnail sheet was visually checked. Native custom path points, handle
   types and selection restore after injected batch failure. Escape and code
   reload preserve a user's segment count below the preset's starting count.
-- Profile thumbnail changes took roughly 3–6 ms in background tests; unchanged
+- Profile thumbnail changes took roughly 3â€“6 ms in background tests; unchanged
   profiles reuse the cached image. Native preview evaluation leaves no temporary
   scene, object or mesh IDs. These are CPU measurements, not live viewport FPS.
 - All 24 suites passed in isolated background Blender 5.2 processes; affected

@@ -5,7 +5,7 @@ import bpy
 from bpy.app.handlers import persistent
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty
 from mathutils import Matrix
-from . import array_core, array_inference, array_tween, icons, shortcuts
+from . import array_core, array_inference, array_tween, icons, shortcuts, display_units
 
 STATE_KEY='harhtools_array_preview'
 _tab_active=False
@@ -117,6 +117,9 @@ def native_scene_modal(window):
 
 
 class HARHTOOLS_PG_array(bpy.types.PropertyGroup):
+    gap_studs:display_units.distance_property('gap','Gap',minimum=-1e10)
+    radius_studs:display_units.distance_property('radius','Radius')
+    resolved_radius_studs:display_units.distance_property('resolved_radius','Radius')
     mode:EnumProperty(name='Array',items=[('LINEAR','Linear','Repeat in a row'),('CIRCULAR','Circular','Repeat around a ring or arc')],default='LINEAR',update=length_changed)
     orientation:EnumProperty(name='Axes',items=[('WORLD','Global','Use the scene X, Y, and Z directions'),('ACTIVE','Last','Use the local X, Y, and Z directions of the last selected object')],default='WORLD',update=changed)
     auto_axis:BoolProperty(name='Auto Axis',description='Infer the array direction from the selection and view; click X, Y, or Z to override',default=True,update=changed)
@@ -618,8 +621,7 @@ def fit_marker(shader,plan):
 
 
 def format_length(context,value):
-    units=context.scene.unit_settings
-    return bpy.utils.units.to_string(units.system,'LENGTH',value*units.scale_length,precision=4)
+    return display_units.format_length(context,value)
 
 
 def _toggle_label(layout,cfg,property_name,label,icon=None,enabled=True):
@@ -653,7 +655,7 @@ def draw_pattern(layout,context):
     if cfg.mode=='LINEAR':
         _toggle_label(column,cfg,'fit_length','Fit Length')
         if cfg.fit_length:
-            column.prop(cfg,'gap',text='Min Gap')
+            display_units.draw(column,cfg,'gap',context,text='Min Gap')
             selected=context.selected_objects;active=context.view_layer.objects.active
             if len(selected)==2 and active in selected:
                 target=next(obj for obj in selected if obj!=active)
@@ -667,7 +669,7 @@ def draw_pattern(layout,context):
                 column.label(text='Gap: '+format_length(context,info['gap']))
         else:
             column.prop(cfg,'count')
-            column.prop(cfg,'gap')
+            display_units.draw(column,cfg,'gap',context)
     else:
         angular_fit=cfg.fit_ring and cfg.pivot!='BOUNDS'
         row=column.row();row.enabled=not angular_fit
@@ -679,7 +681,7 @@ def draw_pattern(layout,context):
         row=column.row()
         computed=cfg.pivot!='BOUNDS' or cfg.fit_ring
         row.enabled=not computed
-        row.prop(cfg,'resolved_radius' if computed else 'radius',text='Radius')
+        display_units.draw(row,cfg,'resolved_radius' if computed else 'radius',context,text='Radius')
         column.prop(cfg,'sweep')
         _toggle_label(column,cfg,'rotate_copies','Rotate Copies',enabled=not cfg.fit_ring)
         _toggle_label(column,cfg,'fit_ring','Fit Ring')

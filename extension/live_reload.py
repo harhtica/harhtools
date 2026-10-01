@@ -171,6 +171,7 @@ def _rna_snapshot(owner, only_tools=False):
         name = prop.identifier
         if name == 'rna_type' or prop.is_readonly or prop.type == 'COLLECTION':
             continue
+        if name.endswith('_studs') and prop.is_skip_save:continue  # Derived display values, not stored distances.
         if only_tools and (not name.startswith(('harhtools_', 'arch_shape_builder_'))
                            or name.startswith('harhtools_grip_') or name in _SKIP_SETTINGS):
             continue

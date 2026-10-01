@@ -4,7 +4,7 @@ import time
 import bpy
 from mathutils import Vector
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty
-from . import outline_geometry, outline_snap, outline_profiles, shortcuts
+from . import outline_geometry, outline_snap, outline_profiles, shortcuts, display_units, profile_editor
 
 STATE_KEY = 'harhtools_outline_preview'
 PREVIEW_INTERVAL = 1 / 30
@@ -33,6 +33,12 @@ def _profile_changed(cfg,context):
 
 
 class HARHTOOLS_PG_outline(bpy.types.PropertyGroup):
+    bevel_ui_ready:BoolProperty(default=False,options={'HIDDEN'})
+    edited_profile:PointerProperty(type=bpy.types.Curve,name='My Profile',poll=profile_editor.poll_asset,update=_changed)
+    working_profile:PointerProperty(type=bpy.types.Curve,options={'SKIP_SAVE'})
+    thickness_studs:display_units.distance_property('thickness','Thickness')
+    bevel_depth_studs:display_units.distance_property('bevel_depth','Depth')
+    bevel_width_studs:display_units.distance_property('bevel_width','Bevel Width')
     thickness: FloatProperty(name='Thickness', default=.05, min=.000001,
                              subtype='DISTANCE', unit='LENGTH', precision=4,
                              description='Even world-space distance from the original boundary', update=_changed)
@@ -57,7 +63,8 @@ class HARHTOOLS_PG_outline(bpy.types.PropertyGroup):
     bevel_profile: EnumProperty(name='Profile', default='ROUND', items=[
         ('ROUND','Rounded','Circular edge profile'),('CHAMFER','Chamfer','Single flat bevel face'),
         ('CONCAVE','Concave','Inward-curved profile'),('SQUARE','Soft Square','Fuller convex profile'),
-        ('CUSTOM','Custom','Adjust the native bevel shape value')]+outline_profiles.ITEMS, update=_profile_changed)
+        ('CUSTOM','Custom','Adjust the native bevel shape value')]+outline_profiles.ITEMS+[
+        ('EDITED','My Profile','An editable copy; built-in presets remain unchanged')], update=_profile_changed)
     bevel_shape: FloatProperty(name='Shape', default=.5, min=0, max=1, update=_changed)
 
 
@@ -534,8 +541,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             return
         import blf
         cfg = settings(); scale = bpy.context.preferences.system.ui_scale
-        width = bpy.utils.units.to_string(bpy.context.scene.unit_settings.system, 'LENGTH', cfg.thickness,
-                                         precision=4, split_unit=False)
+        width = display_units.format_length(bpy.context,cfg.thickness)
         message = ('Cannot create: ' + self._error if self._error else
                    f'Thickness {width} | Snap {"ON" if cfg.snap_geometry else "OFF"} (S) | Drag to adjust | Enter to create')
         if self._snap_hit:
@@ -581,22 +587,27 @@ def cancel_running(*_args):
 def draw_panel(layout, context):
     box = layout.box(); box.label(text='Make Outline')
     cfg = settings(context); state = bpy.app.driver_namespace.get(STATE_KEY)
-    box.prop(cfg, 'thickness'); box.prop(cfg, 'direction')
+    display_units.draw(box,cfg,'thickness',context); box.prop(cfg, 'direction')
     box.prop(cfg, 'join_style'); box.prop(cfg, 'output_type')
+    box.prop(cfg, 'snap_geometry'); box.prop(cfg, 'hide_sources')
+    row = box.row(); row.enabled = state is None
+    row.operator('view3d.harhtools_make_outline', text='Make Outline', icon='MOD_SOLIDIFY')
     if cfg.output_type=='MESH':
         box.prop(cfg,'bevel_enabled')
         if cfg.bevel_enabled:
-            box.prop(cfg,'bevel_depth');box.prop(cfg,'bevel_width');box.prop(cfg,'bevel_profile')
+            display_units.draw(box,cfg,'bevel_depth',context);display_units.draw(box,cfg,'bevel_width',context);box.prop(cfg,'bevel_profile')
             if cfg.bevel_profile=='CUSTOM':box.prop(cfg,'bevel_shape')
             if cfg.bevel_profile!='CHAMFER':box.prop(cfg,'bevel_segments')
             from . import outline_preview
             box.label(text='Profile cross-section')
-            box.template_icon(icon_value=outline_preview.profile_icon(cfg),scale=5.0)
+            icon=outline_preview.profile_icon(cfg)
+            if icon:box.template_icon(icon_value=icon,scale=5.0)
+            else:
+                message,status_icon=outline_preview.profile_status(cfg)
+                box.label(text=message,icon=status_icon)
+            profile_editor.draw(box,cfg)
             box.operator('object.harhtools_border_bevel',text='Update Selected Border')
             if state:box.label(text='Live bevel preview · Enter to keep')
-    box.prop(cfg, 'snap_geometry'); box.prop(cfg, 'hide_sources')
-    row = box.row(); row.enabled = state is None
-    row.operator('view3d.harhtools_make_outline', text='Make Outline', icon='MOD_SOLIDIFY')
     if context.mode != 'OBJECT':
         box.label(text='Select closed shapes in Object Mode.')
     elif state:
@@ -606,14 +617,25 @@ def draw_panel(layout, context):
             box.label(text='Reduce thickness or repair the shape.', icon='ERROR')
 
 
+def initialize_bevel_ui():
+    if bpy.app.driver_namespace.get(STATE_KEY):return .5
+    for manager in getattr(bpy.data,'window_managers',()):
+        cfg=getattr(manager,'harhtools_outline',None)
+        if cfg is not None and not cfg.bevel_ui_ready:
+            cfg.bevel_enabled=False;cfg.bevel_ui_ready=True
+    return None
+
+
 def register():
     for cls in (HARHTOOLS_PG_outline, VIEW3D_OT_harhtools_make_outline, OBJECT_OT_harhtools_border_bevel):
         bpy.utils.register_class(cls)
     bpy.types.WindowManager.harhtools_outline = PointerProperty(type=HARHTOOLS_PG_outline)
     bpy.app.handlers.load_pre.append(cancel_running)
+    bpy.app.timers.register(initialize_bevel_ui,first_interval=.2)
 
 
 def unregister():
+    if bpy.app.timers.is_registered(initialize_bevel_ui):bpy.app.timers.unregister(initialize_bevel_ui)
     cancel_running()
     # Never import during teardown: a failed registration may have removed
     # the package root while leaving this child loaded.

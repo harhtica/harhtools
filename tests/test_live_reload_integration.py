@@ -100,12 +100,13 @@ def assert_scene_settings():
 
 try:
     if args.old_source:
-        assert not hasattr(package, 'live_reload')
+        watcher=getattr(package,'live_reload',None)
         copy_isolated(ROOT / 'extension')
-        spec = importlib.util.spec_from_file_location('reload_helper_integration', ROOT / 'tools/reload_harhtools.py')
-        helper = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(helper)
-        watcher = helper.main()
+        if watcher is None:
+            spec = importlib.util.spec_from_file_location('reload_helper_integration', ROOT / 'tools/reload_harhtools.py')
+            helper = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(helper)
+            watcher = helper.main()
         assert reload_ready(watcher) is None
         package = sys.modules['real_reload_fixture']
         assert hasattr(package, 'outline_tool')
@@ -116,6 +117,12 @@ try:
     wm.harhtools_outline.thickness = .375
     wm.harhtools_outline.direction = 'OUTWARD'
     wm.harhtools_outline.snap_geometry = True
+    wm.harhtools_distance_units='SCENE'
+    wm.harhtools_outline.bevel_profile='TORUS'
+    working=package.profile_editor.start(wm.harhtools_outline)
+    working.bevel_profile.points[3].location.x-=.02;working.bevel_profile.update();package.profile_editor.tick()
+    profile_data=package.profile_editor.serialize(working)
+    wm.harhtools_edit_arc.match_spacing=False
     watcher = package.live_reload
     previous_curve = package.curve_geometry if hasattr(package, 'curve_geometry') else package.shape_builder.curve_geometry
     stamp_version('90.0.1')
@@ -125,6 +132,9 @@ try:
     assert_scene_settings()
     assert wm.harhtools_outline.thickness == .375
     assert wm.harhtools_outline.direction == 'OUTWARD' and wm.harhtools_outline.snap_geometry
+    assert wm.harhtools_outline.edited_profile==working
+    assert package.profile_editor.serialize(working)==profile_data
+    assert wm.harhtools_distance_units=='SCENE' and not wm.harhtools_edit_arc.match_spacing
     print('PASS: full package reload preserves real outline/array/builder/theme settings')
 
     watcher = package.live_reload

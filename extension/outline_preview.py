@@ -1,5 +1,6 @@
 """Temporary native bevel evaluation and cached profile thumbnails."""
 import math
+import json
 import bpy
 import bmesh
 import bpy.utils.previews
@@ -8,6 +9,9 @@ from . import outline_mesh,outline_bevel,outline_profiles
 
 _icons=None
 _icon_key=None
+_requested_key=None
+_error_key=None
+_error_message=''
 
 
 def surface(results,options):
@@ -45,7 +49,7 @@ def surface(results,options):
         bpy.data.scenes.remove(scene)
 
 
-def profile_points(profile,segments,shape):
+def profile_points(profile,segments,shape,profile_data=''):
     """Read the actual native bevel cross-section from a detached BMesh."""
     shape=shape if profile=='CUSTOM' else outline_bevel.PROFILES.get(profile,.5)
     segments=1 if profile=='CHAMFER' else segments
@@ -56,11 +60,14 @@ def profile_points(profile,segments,shape):
         for f in [(0,1,2,3),(7,6,5,4),(0,4,5,1),(1,5,6,2),(2,6,7,3),(3,7,4,0)]:bm.faces.new([verts[i] for i in f])
         bm.normal_update()
         edge=next(e for e in bm.edges if all(abs(v.co.y-1)<1e-7 and abs(v.co.z)<1e-7 for v in e.verts))
-        if profile in outline_profiles.NAMES:
+        if profile in outline_profiles.NAMES or profile=='EDITED':
             holder_mesh=bpy.data.meshes.new('Harhtools profile scratch')
             holder=bpy.data.objects.new('Harhtools profile scratch',holder_mesh)
             mod=holder.modifiers.new('Profile','BEVEL')
-            outline_profiles.configure(mod.custom_profile,profile,segments)
+            if profile=='EDITED':
+                if not profile_data:raise ValueError('Choose or edit a custom profile first.')
+                outline_profiles.restore(mod.custom_profile,json.loads(profile_data),segments)
+            else:outline_profiles.configure(mod.custom_profile,profile,segments)
             # BMesh exposes custom_profile but Blender's Python binding does
             # not implement that argument. Read the native modifier's own
             # initialized CurveProfile samples instead (same bevel sampler).
@@ -79,9 +86,9 @@ def profile_points(profile,segments,shape):
         if holder_mesh is not None:bpy.data.meshes.remove(holder_mesh)
 
 
-def profile_icon(cfg):
+def _build_icon(key):
+    """Generate outside panel draw; native custom profiles allocate scratch IDs."""
     global _icons,_icon_key
-    key=(cfg.bevel_profile,cfg.bevel_segments,float(cfg.bevel_shape))
     if _icons is None:_icons=bpy.utils.previews.new()
     if key!=_icon_key:
         points=profile_points(*key);size=160;pixels=[.105,.11,.12,1.]*(size*size)
@@ -112,7 +119,55 @@ def profile_icon(cfg):
     return _icons['profile'].icon_id
 
 
+def _key(cfg):
+    key=(cfg.bevel_profile,cfg.bevel_segments,float(cfg.bevel_shape))
+    if cfg.bevel_profile=='EDITED':
+        from . import profile_editor
+        key+=(profile_editor.serialize(cfg.edited_profile),)
+    return key
+
+
+def _redraw_panels():
+    for manager in getattr(bpy.data,'window_managers',()):
+        for window in manager.windows:
+            for area in window.screen.areas:
+                if area.type=='VIEW_3D':area.tag_redraw()
+
+
+def _refresh_icon():
+    """One coalesced main-thread timer, never run from a panel draw callback."""
+    global _requested_key,_error_key,_error_message
+    key=_requested_key;_requested_key=None
+    if key is None:return None
+    try:
+        _build_icon(key);_error_key=None;_error_message=''
+    except Exception as exc:
+        _error_key=key;_error_message=str(exc)
+        print('Harhtools profile preview:',_error_message)
+    _redraw_panels()
+    return None
+
+
+def profile_icon(cfg):
+    """Read cached pixels or queue them; drawing must never write Blender IDs."""
+    global _requested_key
+    key=_key(cfg)
+    if _icons is not None and key==_icon_key:
+        return _icons['profile'].icon_id
+    if key!=_error_key:
+        _requested_key=key
+        if not bpy.app.timers.is_registered(_refresh_icon):
+            bpy.app.timers.register(_refresh_icon,first_interval=.01)
+    return 0
+
+
+def profile_status(cfg):
+    return ('Profile preview unavailable','ERROR') if _key(cfg)==_error_key else ('Loading profile preview...','TIME')
+
+
 def clear():
-    global _icons,_icon_key
+    global _icons,_icon_key,_requested_key,_error_key,_error_message
+    if bpy.app.timers.is_registered(_refresh_icon):bpy.app.timers.unregister(_refresh_icon)
     if _icons is not None:bpy.utils.previews.remove(_icons)
     _icons=None;_icon_key=None
+    _requested_key=None;_error_key=None;_error_message=''

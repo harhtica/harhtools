@@ -1,5 +1,6 @@
 """Editable depth and perimeter-only bevels for flat mesh borders."""
 import math
+import json
 from collections import Counter
 import bpy
 from . import outline_profiles
@@ -43,7 +44,7 @@ def _weights(obj):
     return [1.0 if counts[tuple(sorted(edge.vertices))]==1 else 0.0 for edge in data.edges]
 
 
-def _configure(obj,depth,width,segments,profile,shape,attribute_name):
+def _configure(obj,depth,width,segments,profile,shape,attribute_name,profile_data=''):
     solid=obj.modifiers.get(DEPTH_NAME) or obj.modifiers.new(DEPTH_NAME,'SOLIDIFY')
     solid.thickness=depth;solid.offset=-1;solid.use_even_offset=True;solid.bevel_convex=0
     bevel=obj.modifiers.get(BEVEL_NAME) or obj.modifiers.new(BEVEL_NAME,'BEVEL')
@@ -55,15 +56,19 @@ def _configure(obj,depth,width,segments,profile,shape,attribute_name):
     if profile in outline_profiles.NAMES:
         bevel.profile_type='CUSTOM'
         outline_profiles.configure(bevel.custom_profile,profile,segments)
+    elif profile=='EDITED':
+        bevel.profile_type='CUSTOM'
+        outline_profiles.restore(bevel.custom_profile,json.loads(profile_data),segments)
     bevel.miter_outer='MITER_SHARP';bevel.miter_inner='MITER_SHARP'
     bevel.use_clamp_overlap=True;bevel.harden_normals=True
     obj.update_tag()
 
 
-def apply(objects,*,depth,width,segments=6,profile='ROUND',custom_shape=.5):
+def apply(objects,*,depth,width,segments=6,profile='ROUND',custom_shape=.5,profile_data=''):
     """Update only our modifiers/weights, rolling back the whole batch on failure."""
     depth=float(depth);width=float(width);segments=int(segments)
-    shape=float(custom_shape) if profile=='CUSTOM' else .5 if profile in outline_profiles.NAMES else PROFILES.get(profile)
+    shape=float(custom_shape) if profile=='CUSTOM' else .5 if profile in outline_profiles.NAMES or profile=='EDITED' else PROFILES.get(profile)
+    if profile=='EDITED' and not profile_data:raise ValueError('Choose or edit a custom profile first.')
     if not all(math.isfinite(v) and v>0 for v in (depth,width)):
         raise ValueError('Border depth and bevel width must be positive.')
     if shape is None or not math.isfinite(shape) or not 0<=shape<=1 or not 1<=segments<=128:
@@ -83,7 +88,8 @@ def apply(objects,*,depth,width,segments=6,profile='ROUND',custom_shape=.5):
             snapshots.append(saved)
             if attr is None:attr=obj.data.attributes.new(attribute_name,'FLOAT','EDGE')
             for item,value in zip(attr.data,weights):item.value=value
-            _configure(obj,depth,width,segments,profile,shape,attribute_name)
+            if profile_data:_configure(obj,depth,width,segments,profile,shape,attribute_name,profile_data)
+            else:_configure(obj,depth,width,segments,profile,shape,attribute_name)
         return objects
     except Exception:
         for saved in reversed(snapshots):
@@ -105,5 +111,9 @@ def apply(objects,*,depth,width,segments=6,profile='ROUND',custom_shape=.5):
 
 
 def options(cfg):
-    return dict(depth=cfg.bevel_depth,width=cfg.bevel_width,segments=cfg.bevel_segments,
+    result=dict(depth=cfg.bevel_depth,width=cfg.bevel_width,segments=cfg.bevel_segments,
                 profile=cfg.bevel_profile,custom_shape=cfg.bevel_shape)
+    if cfg.bevel_profile=='EDITED':
+        from . import profile_editor
+        result['profile_data']=profile_editor.serialize(cfg.edited_profile)
+    return result

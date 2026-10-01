@@ -31,6 +31,8 @@ assert ids()==before
 icons=[];profiles=[]
 for name in ('ROUND','CHAMFER','CONCAVE','SQUARE','CUSTOM'):
     cfg=SimpleNamespace(bevel_profile=name,bevel_segments=6,bevel_shape=.9)
+    op.profile_icon(cfg);assert bpy.app.timers.is_registered(op._refresh_icon)
+    bpy.app.timers.unregister(op._refresh_icon);op._refresh_icon()
     icon=op.profile_icon(cfg);preview=op._icons['profile'];pixels=tuple(preview.image_pixels_float)
     assert tuple(preview.image_size)==(160,160) and len(pixels)==160*160*4
     assert bpy.app.background or icon>0

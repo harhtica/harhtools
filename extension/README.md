@@ -1,11 +1,11 @@
-# harhtools 1.10.0
+# harhtools 1.11.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.10.0.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.11.0.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -19,14 +19,57 @@ Arc > Adjust Selected Arc** at the top of the harhtools tab. **Arc Amount** sets
 its angle and **Roundness** blends the original section toward a circular arc.
 **Reverse Bend** flips the arc to the other side. Changes appear in the workspace.
 Press **Enter** with the pointer over the viewport to keep the result, or **Esc**
-to restore the original geometry and selection.
+to undo slider changes since your last manual mesh edit.
 
 Only the selected section changes. Adjacent unselected joining vertices stay
 fixed, so selecting a lower tip leaves an upper tip unchanged. A wire section's
-**Vertices** slider resamples just that section. Sections attached to faces retain
+**Match Nearby Spacing** option is on by default. It measures up to three
+untouched edges adjoining each end, takes their median world-space length, and
+chooses the closest vertex count for the new arc (3–2048 vertices). Switch it off
+for a manual **Vertices** count. Without usable adjoining edges, the manual count
+is used. Sections attached to faces retain
 their original vertex count and connectivity. The selection must form one flat,
 connected, unbranched chain in the active mesh. A complete closed wire loop is
 also supported. Open sections stop at 359 degrees because their ends stay apart.
+
+You can move, rotate or scale vertices, or select another section, with the
+controls still open. They refresh after a native transform ends; an invalid
+selection pauses them until a continuous section is selected again. Starting
+the tool leaves the mesh unchanged until a control is adjusted. Unselected
+joining vertices remain unselected when a wire section is resampled.
+
+## Readable distances
+
+The **Distances** selector at the top of Harhtools defaults to **Roblox Studs**.
+Thickness, bevel depth/width, array gap/radius and their workspace readouts use
+studs with compact decimals. The Transform tab shows the selected object's size
+in the chosen units. **Scene Units** restores native distance fields.
+
+The conversion respects scene Unit Scale and uses
+[Roblox's standard 1 stud = 0.28 metres](https://create.roblox.com/docs/physics/units).
+This changes display/input only, not geometry, transforms or scene units.
+Blender's own panels keep their native labels. Match your Roblox import scale
+settings to the source units when exporting.
+
+## Editable bevel profiles
+
+**Make Outline** is above the bevel section so it stays reachable. **Add Bevel**
+is off initially; enable it to reveal profiles and the native section thumbnail.
+New thumbnails are queued outside sidebar drawing, which also works in Edit Mode.
+
+Click **Edit Profile Points** to open Blender's native point editor on a private
+working copy. Drag/add/delete points and use the native handle and sampling
+controls. Selecting a point alone does not create a profile. The first shape
+edit creates **<preset> - Edited**, changes the preset selector to **My Profile**,
+and refreshes the thumbnail and an active Make Outline workspace preview.
+Built-in presets remain unchanged and can be chosen again at any time.
+
+Rename the edited profile with **Name**, or choose another saved one with **My
+Profile**. **New Profile Copy** protects the current user profile while creating
+another variation. Edited profiles are retained as Blender curve datablocks
+without scene objects and persist when you save the blend file. They do not
+create Shape Library entries. **Update Selected Border** applies the current
+settings to an existing border; finished borders do not change until updated.
 
 ## Circle / Arc (Object Mode)
 
@@ -160,7 +203,7 @@ The Profile menu also includes 14 architectural mouldings: **Fillet**, **Fascia*
 These are distinct native custom-profile paths, including flat lips and undercuts.
 The sections are normalized presets inspired by traditional mouldings; use Width
 to size them. Choosing one starts with at least 32 segments; the Segments control
-then allows 1–128. Low counts simplify the section and may lose small details.
+then allows 1â€“128. Low counts simplify the section and may lose small details.
 After creating a border, its custom profile can also be edited in the native
 Bevel modifier. **Update Selected Border** reapplies the selected preset.
 
@@ -265,7 +308,7 @@ the preview and restores faded guides. Returning to harhtools refreshes it.
   section's construction center. Align modular outlines before adding bevels.
   **Linked Copies** shares mesh/curve data.
 - **Hide Inactive** fades unselected mesh/curve guides. **Inactive Opacity**
-  controls their visibility from 0–100% (15% by default); 100% uses normal native
+  controls their visibility from 0â€“100% (15% by default); 100% uses normal native
   display. Sidebar sliders do not interrupt this control. Original visibility is
   restored when the tool closes, before saving, and through undo/redo.
 

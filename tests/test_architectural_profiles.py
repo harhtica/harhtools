@@ -48,7 +48,8 @@ for name,label,_ in profiles.ITEMS:
     assert max(min(math.dist(p,q) for q in native) for p in section)<1e-5,(name,section,native)
     box_ev.to_mesh_clear()
     start=time.perf_counter();cfg=SimpleNamespace(bevel_profile=name,bevel_segments=32,bevel_shape=.5)
-    preview.profile_icon(cfg);times.append(time.perf_counter()-start)
+    preview.profile_icon(cfg);assert bpy.app.timers.is_registered(preview._refresh_icon)
+    bpy.app.timers.unregister(preview._refresh_icon);preview._refresh_icon();times.append(time.perf_counter()-start)
     pixels=tuple(preview._icons['profile'].image_pixels_float)
     thumbnails[label]=[round(max(0,min(1,p))*255) for p in pixels]
     with patch.object(preview,'profile_points',side_effect=AssertionError('Unchanged panel must reuse thumbnail')):

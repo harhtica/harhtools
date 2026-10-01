@@ -311,10 +311,12 @@ class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
             tool_rail.operator('view3d.harhtools_panel_tab',text='',icon_value=icons.icon(icon),depress=tab==key).tab=key
             tool_rail.separator(factor=.2)
         content=row.column()
+        content.prop(context.window_manager,'harhtools_distance_units')
         if tab=='ARRAY':
             array_tool.draw_panel(content,context)
         elif tab=='SETTINGS':
             content.label(text='Settings')
+            content.label(text='1 Roblox stud = 0.28 m; scene scale is respected.')
             update_box=content.box()
             update_box.label(text='Harhtools '+context.window_manager.harhtools_live_reload_version)
             update_box.prop(context.window_manager,'harhtools_live_reload_enabled')
@@ -322,6 +324,11 @@ class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
             shortcuts.draw_shortcuts(content,context,compact=True)
         elif tab=='TRANSFORM':
             content.label(text='Transform')
+            from . import display_units
+            if context.active_object:
+                content.label(text='Selected object size')
+                for axis,value in zip('XYZ',context.active_object.dimensions):
+                    content.label(text=axis+': '+display_units.format_length(context,value))
             draw_center_box(content,context)
         else:
             from . import circle_arc,edit_arc

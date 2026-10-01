@@ -278,7 +278,7 @@ class Layout:
     def label(self,*args,**kwargs):pass
     def prop(self,obj,name,*args,**kwargs):assert hasattr(obj,name),name
     def template_icon(self,**kwargs):assert bpy.app.background or kwargs['icon_value']>0
-    def operator(self,name,*args,**kwargs):assert name in {'view3d.harhtools_make_outline','object.harhtools_border_bevel'}
+    def operator(self,name,*args,**kwargs):assert name in {'view3d.harhtools_make_outline','object.harhtools_border_bevel','object.harhtools_edit_profile'}
 ot.draw_panel(Layout(),bpy.context)
 cfg.output_type='MESH';cfg.bevel_enabled=True
 for preset in ('ROUND','CHAMFER','CONCAVE','SQUARE','CUSTOM'):

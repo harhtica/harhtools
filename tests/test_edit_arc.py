@@ -37,6 +37,7 @@ class Manager:
     def event_timer_remove(self,*a):pass
     def modal_handler_add(self,*a):pass
 class Harness:pass
+Harness.bl_idname=ea.MESH_OT_harhtools_edit_arc.bl_idname
 for name,method in vars(ea.MESH_OT_harhtools_edit_arc).items():
     if isinstance(method,FunctionType):setattr(Harness,name,method)
 Harness.report=lambda *a:None
@@ -47,6 +48,7 @@ try:
     before_meshes=set(bpy.data.meshes);h=Harness()
     assert h.invoke(ctx,event('LEFTMOUSE'))=={'RUNNING_MODAL'}
     cfg=ctx.window_manager.harhtools_edit_arc
+    cfg.match_spacing=False
     for n in range(10,40):cfg.vertices=n
     assert h._dirty
     h.modal(ctx,event('TIMER'));assert not h._dirty
@@ -81,12 +83,12 @@ try:
     assert h.modal(ctx,event('ESC'))=={'CANCELLED'}
     assert ea.signature(obj)==original_signature
 
-    # External geometry edits during a preview are never replaced by the
-    # snapshot, including on Escape.
+    # External geometry edits become the next slider baseline; Escape keeps
+    # those edits while cancelling only subsequent slider changes.
     h=Harness();assert h.invoke(ctx,event('LEFTMOUSE'))=={'RUNNING_MODAL'}
     bm=bmesh.from_edit_mesh(mesh);bm.verts.ensure_lookup_table();bm.verts[0].co.z=.5
     bmesh.update_edit_mesh(mesh);external=ea.signature(obj)
-    cfg.roundness=.25;h.refresh();assert 'changed outside' in h._error
+    cfg.roundness=.25;h.refresh();assert not h._error
     h.modal(ctx,event('ESC'));assert ea.signature(obj)==external
     assert set(bpy.data.meshes)==before_meshes
 finally:

@@ -1,12 +1,37 @@
 """Live arc editing on one selected mesh chain; outside vertices stay fixed."""
 import math
 import time
+import statistics
+from bisect import bisect_right
 import bpy
 import bmesh
 from mathutils import Vector
 from bpy.props import FloatProperty,IntProperty,BoolProperty,PointerProperty
 
 STATE='harhtools_arc_preview'
+
+
+def selection(obj):
+    bm=bmesh.from_edit_mesh(obj.data)
+    return tuple((v.select,v.hide) for v in bm.verts)
+
+
+def neighboring_spacing(obj,path,closed):
+    """Median world-space edge length along up to three untouched edges per join."""
+    if closed:return None
+    section=set(path);lengths=[];seen=set()
+    for anchor in (path[0],path[-1]):
+        current=anchor;previous=None
+        for _ in range(3):
+            edges=[e for e in current.link_edges if not e.hide and len(e.link_faces)<=1
+                   and e not in seen and e.other_vert(current) not in section
+                   and not e.other_vert(current).select and e.other_vert(current)!=previous]
+            if len(edges)!=1:break
+            edge=edges[0];seen.add(edge);other=edge.other_vert(current)
+            length=(obj.matrix_world.to_3x3()@(other.co-current.co)).length
+            if length>1e-10:lengths.append(length)
+            previous,current=current,other
+    return statistics.median(lengths) if lengths else None
 
 def signature(obj):
     if obj.mode=='EDIT':
@@ -25,11 +50,11 @@ def capture(obj):
     if any(len(row)>2 for row in links.values()):raise ValueError('Select a single boundary chain, without branching edges.')
     ends=[v for v in chosen if len(links[v])<2];closed=not ends
     if len(chosen)>1 and len(ends) not in (0,2):raise ValueError('Select one connected outline section.')
-    start=min(ends or chosen,key=lambda v:v.index);path=[start];previous=None;current=start
+    start=min(ends or chosen,key=lambda v:v.index);path=[start];visited={start};previous=None;current=start
     while True:
-        following=next((v for v in sorted(links[current],key=lambda v:v.index) if v!=previous and v not in path),None)
+        following=next((v for v in sorted(links[current],key=lambda v:v.index) if v!=previous and v not in visited),None)
         if following is None:break
-        path.append(following);previous,current=current,following
+        path.append(following);visited.add(following);previous,current=current,following
     if len(path)!=len(chosen):raise ValueError('Select one connected outline section.')
     if not closed:
         if len(path)==1:
@@ -64,6 +89,7 @@ def capture(obj):
              for vertex in (path if closed else path[1:-1]))
     if closed and not wire:raise ValueError('For a filled mesh, select an open boundary section so its joins can stay fixed.')
     return dict(indices=[v.index for v in path],coords=coords,closed=closed,wire=wire,
+                endpoint_selected=(path[0].select,path[-1].select),spacing=neighboring_spacing(obj,path,closed),
                 center=tuple(center),u=tuple(u),v=tuple(v),angle=angle,radius=math.sqrt(sum((Vector(p)-center).length_squared for p in coords)/len(coords)))
 
 
@@ -78,27 +104,36 @@ def positions(info,count,amount,roundness,reverse=False):
     for a,b in zip(spans,spans[1:]):lengths.append(lengths[-1]+(b-a).length)
     def original_at(t):
         distance=t*lengths[-1]
-        for i in range(len(lengths)-1):
-            if distance<=lengths[i+1]:return spans[i].lerp(spans[i+1],(distance-lengths[i])/max(lengths[i+1]-lengths[i],1e-20))
-        return spans[-1].copy()
+        i=min(len(lengths)-2,max(0,bisect_right(lengths,distance)-1))
+        return spans[i].lerp(spans[i+1],(distance-lengths[i])/max(lengths[i+1]-lengths[i],1e-20))
     for i in range(count):
         t=i/(count if full else count-1)
         # Preserve every original vertex at zero influence without resampling.
-        base=original[i] if count==len(original) else original_at(t)
+        base=original[i] if count==len(original) else (original_at(t) if roundness!=1 else None)
         if closed:
             target=Vector(info['center'])+info['radius']*(u*math.cos(t*amount)+v*math.sin(t*amount))
         else:
             chord=(original[-1]-original[0]).length;half=amount*.5;radius=chord/(2*math.sin(half))
             target=(original[0]+original[-1])*.5+u*(radius*math.sin((t-.5)*amount))+v*(radius*(math.cos((t-.5)*amount)-math.cos(half)))
-        points.append(tuple(base.lerp(target,roundness)))
+        points.append(tuple(target if roundness==1 else base.lerp(target,roundness)))
     if not closed:points[0]=tuple(original[0]);points[-1]=tuple(original[-1])
     return points,full
+
+
+def matched_count(obj,info,cfg):
+    if not cfg.match_spacing or not info['wire'] or not info['spacing']:return cfg.vertices
+    samples,closed=positions(info,257,cfg.amount,cfg.roundness,cfg.reverse)
+    matrix=obj.matrix_world.to_3x3();points=[matrix@Vector(p) for p in samples]
+    pairs=list(zip(points,points[1:]))+([(points[-1],points[0])] if closed else [])
+    length=math.fsum((b-a).length for a,b in pairs)
+    return max(3,min(2048,round(length/info['spacing'])+(0 if closed else 1)))
 
 
 def write(obj,snapshot,info,coords,closed):
     editing=obj.mode=='EDIT';bm=bmesh.from_edit_mesh(obj.data) if editing else bmesh.new()
     try:
-        bm.clear();bm.from_mesh(snapshot);bm.verts.ensure_lookup_table()
+        select_mode=set(bm.select_mode) or {'VERT'}
+        bm.clear();bm.from_mesh(snapshot);bm.select_mode=select_mode;bm.verts.ensure_lookup_table()
         path=[bm.verts[i] for i in info['indices']]
         if len(coords)==len(path) and closed==info['closed']:
             for vertex,co in zip(path,coords):vertex.co=co
@@ -112,9 +147,15 @@ def write(obj,snapshot,info,coords,closed):
             for vertex in remove:bm.verts.remove(vertex)
             if info['closed']:created=[bm.verts.new(co) for co in coords]
             else:created=[path[0]]+[bm.verts.new(co) for co in coords[1:-1]]+[path[-1]]
-            for vertex in created:vertex.select_set(True)
             pairs=list(zip(created,created[1:]))+([(created[-1],created[0])] if closed else [])
-            for a,b in pairs:bm.edges.new((a,b)).select_set(True)
+            for a,b in pairs:bm.edges.new((a,b))
+            flags={vertex:True for vertex in created}
+            if not info['closed']:
+                flags[created[0]],flags[created[-1]]=info['endpoint_selected']
+            # Edge selection propagates to vertices in Blender, so establish
+            # edge flags first and restore the precise vertex flags last.
+            for a,b in pairs:bm.edges.get((a,b)).select=flags[a] and flags[b]
+            for vertex,flag in flags.items():vertex.select=flag
         bm.normal_update()
         if editing:bmesh.update_edit_mesh(obj.data,loop_triangles=True,destructive=True)
         else:bm.to_mesh(obj.data);obj.data.update()
@@ -124,7 +165,7 @@ def write(obj,snapshot,info,coords,closed):
 
 def changed(cfg,context):
     state=bpy.app.driver_namespace.get(STATE)
-    if state:
+    if state and not getattr(state,'_syncing',False):
         if not state._info['closed'] and cfg.amount>math.radians(359)+1e-6:
             cfg.amount=math.radians(359)
         state._dirty=True;state._area.tag_redraw()
@@ -134,6 +175,8 @@ class HARHTOOLS_PG_edit_arc(bpy.types.PropertyGroup):
     vertices:IntProperty(name='Vertices',default=64,min=3,max=2048,soft_max=512,update=changed)
     roundness:FloatProperty(name='Roundness',default=1,min=0,max=1,update=changed)
     reverse:BoolProperty(name='Reverse Bend',default=False,update=changed)
+    match_spacing:BoolProperty(name='Match Nearby Spacing',default=True,update=changed,
+        description='Match the edge spacing of adjoining unselected wire vertices; face topology stays unchanged')
 
 class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
     bl_idname='mesh.harhtools_edit_arc';bl_label='Adjust Selected Arc';bl_options={'REGISTER','UNDO'}
@@ -143,55 +186,98 @@ class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
             (STATE,'arch_tools_shape_builder','harhtools_outline_preview','harhtools_array_preview'))
     def invoke(self,context,event):
         self._done=False;self._snapshot=None;self._expected=None;self._timer=None;self._area=context.area;self._wm=context.window_manager
-        self._obj=context.active_object;self._dirty=True;self._error='';self._key=None;self._next_tick=0
+        self._obj=context.active_object;self._dirty=False;self._error='';self._key=None;self._next_tick=0
+        self._syncing=False;self._valid=False;self._selection=None
         try:
-            self._info=capture(self._obj)
-            self._snapshot=bpy.data.meshes.new('Harhtools arc undo snapshot')
-            bmesh.from_edit_mesh(self._obj.data).to_mesh(self._snapshot)
-            self._expected=signature(self._obj)
-            cfg=self._wm.harhtools_edit_arc;cfg.amount=self._info['angle'];cfg.vertices=len(self._info['coords']);cfg.roundness=1;cfg.reverse=False
-            bpy.app.driver_namespace[STATE]=self;self.refresh()
+            self.adopt_mesh()
+            bpy.app.driver_namespace[STATE]=self
             self._timer=self._wm.event_timer_add(1/30,window=context.window);self._wm.modal_handler_add(self)
             return {'RUNNING_MODAL'}
         except Exception as exc:self.finish(cancel=True);self.report({'ERROR'},str(exc));return {'CANCELLED'}
+    def settings_key(self):
+        cfg=self._wm.harhtools_edit_arc
+        return (cfg.amount,cfg.vertices,cfg.roundness,cfg.reverse,cfg.match_spacing)
+    def adopt_mesh(self):
+        """Manual edits become the new baseline; never write from a draw callback."""
+        self._valid=False
+        info=capture(self._obj)
+        if self._snapshot is None:self._snapshot=bpy.data.meshes.new('Harhtools arc undo snapshot')
+        bmesh.from_edit_mesh(self._obj.data).to_mesh(self._snapshot)
+        self._info=info;self._expected=signature(self._obj);self._selection=selection(self._obj)
+        self._syncing=True
+        try:
+            cfg=self._wm.harhtools_edit_arc
+            cfg.amount=info['angle'];cfg.vertices=len(info['coords']);cfg.roundness=1;cfg.reverse=False
+        finally:self._syncing=False
+        self._valid=True;self._dirty=False;self._error='';self._key=self.settings_key()
+        self._area.tag_redraw()
+    def observe_mesh(self):
+        current=signature(self._obj);selected=selection(self._obj)
+        if current==self._expected and selected==self._selection:return False
+        try:self.adopt_mesh()
+        except ValueError as exc:
+            self._expected=current;self._selection=selected;self._valid=False
+            self._dirty=False;self._error=str(exc);self._area.tag_redraw()
+        return True
+    def native_tool_running(self,context):
+        # Blender's own transform/select modal must finish or cancel before
+        # recapturing its mesh. Our timer must not fight a live G/R/S operation.
+        window=getattr(context,'window',None)
+        return any(getattr(op,'bl_idname','') not in {self.bl_idname,'MESH_OT_harhtools_edit_arc'}
+                   for op in getattr(window,'modal_operators',()))
     def refresh(self):
-        cfg=self._wm.harhtools_edit_arc;key=(cfg.amount,cfg.vertices,cfg.roundness,cfg.reverse)
+        # Catch edits even if a slider callback arrives before the next timer.
+        cfg=self._wm.harhtools_edit_arc;requested=self.settings_key();pending=self._dirty
+        if self.observe_mesh() and self._valid and pending:
+            self._syncing=True
+            try:
+                for name,value in zip(('amount','vertices','roundness','reverse','match_spacing'),requested):setattr(cfg,name,value)
+            finally:self._syncing=False
+            self._key=None
+        if not self._valid:return
+        key=self.settings_key()
         self._dirty=False
         if key==self._key:return
-        self._key=key
         try:
-            if signature(self._obj)!=self._expected:
-                raise ValueError('The mesh changed outside these controls. Finish this preview before editing it elsewhere.')
-            coords,closed=positions(self._info,cfg.vertices,cfg.amount,cfg.roundness,cfg.reverse)
-            write(self._obj,self._snapshot,self._info,coords,closed);self._expected=signature(self._obj);self._error=''
+            count=matched_count(self._obj,self._info,cfg)
+            coords,closed=positions(self._info,count,cfg.amount,cfg.roundness,cfg.reverse)
+            write(self._obj,self._snapshot,self._info,coords,closed)
+            self._expected=signature(self._obj);self._selection=selection(self._obj);self._error=''
+            self._syncing=True
+            try:cfg.vertices=len(coords)
+            finally:self._syncing=False
+            self._key=self.settings_key()
         except Exception as exc:self._error=str(exc)
         self._area.tag_redraw()
     def modal(self,context,event):
         if self._done:return {'CANCELLED'}
         if context.mode!='EDIT_MESH' or context.active_object!=self._obj:
-            self.finish(cancel=True);return {'CANCELLED'}
+            self.finish();return {'FINISHED'}
+        if self.native_tool_running(context):return {'PASS_THROUGH'}
         if event.type=='TIMER':
             now=time.monotonic()
-            if self._dirty and now>=self._next_tick:self._next_tick=now+1/30;self.refresh()
+            if now>=self._next_tick:
+                self._next_tick=now+(.033 if self._dirty else .12)
+                if self._dirty:self.refresh()
+                else:self.observe_mesh()
             return {'PASS_THROUGH'}
-        if event.type=='ESC' and event.value=='PRESS':self.finish(cancel=True);return {'CANCELLED'}
+        if event.type=='ESC' and event.value=='PRESS':
+            self.observe_mesh();self.finish(cancel=True);return {'CANCELLED'}
         over_ui=any(r.type=='UI' and r.x<=event.mouse_x<r.x+r.width and r.y<=event.mouse_y<r.y+r.height for r in self._area.regions)
         if over_ui:return {'PASS_THROUGH'}
         if event.type in {'RET','NUMPAD_ENTER'} and event.value=='PRESS':
             self.refresh()
             if self._error:return {'RUNNING_MODAL'}
             self.finish();return {'FINISHED'}
-        if event.type=='RIGHTMOUSE' and event.value=='PRESS':self.finish(cancel=True);return {'CANCELLED'}
-        if event.type in {'MIDDLEMOUSE','WHEELUPMOUSE','WHEELDOWNMOUSE','TRACKPADPAN','TRACKPADZOOM','NDOF_MOTION'}:return {'PASS_THROUGH'}
-        return {'RUNNING_MODAL'}
+        return {'PASS_THROUGH'}
     def finish(self,cancel=False):
         if self._done:return
         self._done=True
         if self._timer:self._wm.event_timer_remove(self._timer);self._timer=None
         if self._snapshot:
-            if cancel and self._expected is not None and signature(self._obj)==self._expected:
+            if cancel and self._valid and self._expected is not None and signature(self._obj)==self._expected:
                 write(self._obj,self._snapshot,self._info,self._info['coords'],self._info['closed'])
-            elif cancel:self.report({'WARNING'},'Other mesh edits were detected; kept the current mesh instead of overwriting them.')
+            elif cancel:self.report({'INFO'},'Kept your latest mesh edits.')
             bpy.data.meshes.remove(self._snapshot);self._snapshot=None
         if bpy.app.driver_namespace.get(STATE) is self:bpy.app.driver_namespace.pop(STATE,None)
         if self._area:self._area.tag_redraw()
@@ -207,11 +293,14 @@ def draw_panel(layout,context):
     if state:
         cfg=context.window_manager.harhtools_edit_arc
         box.prop(cfg,'amount',slider=True);box.prop(cfg,'roundness',slider=True)
-        row=box.row();row.enabled=state._info['wire'];row.prop(cfg,'vertices',slider=True)
+        row=box.row();row.enabled=state._info['wire'];row.prop(cfg,'match_spacing')
+        row=box.row();row.enabled=state._info['wire'] and (not cfg.match_spacing or not state._info['spacing']);row.prop(cfg,'vertices',slider=True)
+        if state._info['wire'] and cfg.match_spacing and not state._info['spacing']:box.label(text='No adjoining spacing found; using Vertices.')
         box.prop(cfg,'reverse')
         box.label(text='Joins to the rest stay fixed.')
         if not state._info['wire']:box.label(text='Face-connected: existing vertices retained.')
-        box.label(text='Enter: keep · Esc: restore')
+        box.label(text='Edit vertices normally; controls follow.')
+        box.label(text='Enter: keep · Esc: undo slider changes')
         if state._error:box.label(text=state._error,icon='ERROR')
     else:
         box.label(text='Select one continuous outline section.')
