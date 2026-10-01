@@ -187,7 +187,8 @@ def _rna_snapshot(owner, only_tools=False):
 
 
 def _restore_rna(owner, values):
-    for name, (kind, value) in values.items():
+    # Restore profile presets before their explicitly saved detail controls.
+    for name, (kind, value) in sorted(values.items(),key=lambda row:row[0]!='bevel_profile'):
         prop = owner.bl_rna.properties.get(name)
         if prop is None or prop.is_readonly:
             continue

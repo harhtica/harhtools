@@ -4,7 +4,7 @@ import bpy
 import bmesh
 import bpy.utils.previews
 from mathutils import Vector
-from . import outline_mesh,outline_bevel
+from . import outline_mesh,outline_bevel,outline_profiles
 
 _icons=None
 _icon_key=None
@@ -47,19 +47,36 @@ def surface(results,options):
 
 def profile_points(profile,segments,shape):
     """Read the actual native bevel cross-section from a detached BMesh."""
-    shape=shape if profile=='CUSTOM' else outline_bevel.PROFILES[profile]
+    shape=shape if profile=='CUSTOM' else outline_bevel.PROFILES.get(profile,.5)
     segments=1 if profile=='CHAMFER' else segments
-    bm=bmesh.new()
+    bm=bmesh.new();holder=None;holder_mesh=None
     try:
         verts=[bm.verts.new(p) for p in [(-2,-1,0),(2,-1,0),(2,1,0),(-2,1,0),
                (-2,-1,-.5),(2,-1,-.5),(2,1,-.5),(-2,1,-.5)]]
         for f in [(0,1,2,3),(7,6,5,4),(0,4,5,1),(1,5,6,2),(2,6,7,3),(3,7,4,0)]:bm.faces.new([verts[i] for i in f])
         bm.normal_update()
         edge=next(e for e in bm.edges if all(abs(v.co.y-1)<1e-7 and abs(v.co.z)<1e-7 for v in e.verts))
+        if profile in outline_profiles.NAMES:
+            holder_mesh=bpy.data.meshes.new('Harhtools profile scratch')
+            holder=bpy.data.objects.new('Harhtools profile scratch',holder_mesh)
+            mod=holder.modifiers.new('Profile','BEVEL')
+            outline_profiles.configure(mod.custom_profile,profile,segments)
+            # BMesh exposes custom_profile but Blender's Python binding does
+            # not implement that argument. Read the native modifier's own
+            # initialized CurveProfile samples instead (same bevel sampler).
+            return list(reversed([tuple(p.location) for p in mod.custom_profile.segments]+[(0.,1.)]))
         bmesh.ops.bevel(bm,geom=[edge],offset=.2,segments=segments,profile=shape,affect='EDGES')
-        return sorted({(max(0,min(1,(v.co.y-.8)/.2)),max(0,min(1,(v.co.z+.2)/.2))) for v in bm.verts
-                       if abs(v.co.x-2)<1e-7 and v.co.y>=.79999 and v.co.z>=-.200001})
-    finally:bm.free()
+        points={v:(max(0,min(1,(v.co.y-.8)/.2)),max(0,min(1,(v.co.z+.2)/.2))) for v in bm.verts
+                if abs(v.co.x-2)<1e-7 and v.co.y>=.79999 and v.co.z>=-.200001}
+        current=min(points,key=lambda v:math.dist(points[v],(0,1)));ordered=[];seen=set()
+        while current is not None:
+            ordered.append(points[current]);seen.add(current)
+            current=next((e.other_vert(current) for e in current.link_edges if e.other_vert(current) in points and e.other_vert(current) not in seen),None)
+        return ordered
+    finally:
+        bm.free()
+        if holder is not None:bpy.data.objects.remove(holder,do_unlink=True)
+        if holder_mesh is not None:bpy.data.meshes.remove(holder_mesh)
 
 
 def profile_icon(cfg):
@@ -67,20 +84,28 @@ def profile_icon(cfg):
     key=(cfg.bevel_profile,cfg.bevel_segments,float(cfg.bevel_shape))
     if _icons is None:_icons=bpy.utils.previews.new()
     if key!=_icon_key:
-        points=profile_points(*key);size=160;pixels=[]
+        points=profile_points(*key);size=160;pixels=[.105,.11,.12,1.]*(size*size)
         # Plot native segment endpoints, not an artist approximation. The
         # normalized section isolates profile shape from model dimensions.
         segments=list(zip(points,points[1:]));pink=(1.,.55,.72,1.);white=(.73,.76,.8,1.)
+        polygon=[(0,0)]+points+[(0,0)]
+        def distance(px,py,a,b):
+            dx,dy=b[0]-a[0],b[1]-a[1];den=dx*dx+dy*dy
+            t=max(0,min(1,((px-a[0])*dx+(py-a[1])*dy)/den)) if den>1e-20 else 0
+            return math.hypot(px-a[0]-t*dx,py-a[1]-t*dy)
         for y in range(size):
             py=(y-22)/116
-            for x in range(size):
-                px=(x-22)/116;color=(.105,.11,.12,1.)
-                if 0<=px<=1:
-                    height=next((a[1]+(b[1]-a[1])*(px-a[0])/max(b[0]-a[0],1e-12)
-                                 for a,b in segments if a[0]<=px<=b[0]),0)
-                    if -.08<=py<=height:color=white
-                    if abs(py-height)<.016:color=pink
-                pixels.extend(color)
+            intersections=sorted((b[0]-a[0])*(py-a[1])/(b[1]-a[1])+a[0] for a,b in zip(polygon,polygon[1:]) if (a[1]>py)!=(b[1]>py))
+            for a,b in zip(intersections[::2],intersections[1::2]):
+                for x in range(max(0,math.ceil(a*116+22)),min(size,math.ceil(b*116+22))):
+                    offset=(y*size+x)*4;pixels[offset:offset+4]=white
+        # Stroke only each segment's pixel bounds; profile changes must not
+        # scan every pixel against every segment in the panel draw callback.
+        for a,b in segments:
+            for y in range(max(0,math.floor(min(a[1],b[1])*116+20)),min(size,math.ceil(max(a[1],b[1])*116+24))):
+                for x in range(max(0,math.floor(min(a[0],b[0])*116+20)),min(size,math.ceil(max(a[0],b[0])*116+24))):
+                    if distance((x-22)/116,(y-22)/116,a,b)<.012:
+                        offset=(y*size+x)*4;pixels[offset:offset+4]=pink
         preview=_icons.get('profile') or _icons.new('profile')
         preview.image_size=(size,size);preview.image_pixels_float=pixels
         _icon_key=key

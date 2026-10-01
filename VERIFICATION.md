@@ -1,5 +1,31 @@
 # Release verification
 
+## Version 1.10.0
+
+- Reproduced the partial-overlap error on the six selected, closed semicircles
+  in the saved scene. The corrected arrangement produces 21 regions and 47 trim
+  fragments in about 57 ms. Its 11 shared baseline fragments trim away to six
+  open arches. Actual source/trim topology was plotted and visually checked;
+  source coordinates, selection and the saved scene remain unchanged.
+- Shared straight and cubic intervals retain one original source. Regression
+  cases cover nested/partial/reversed duplicates, nonuniform straight handles,
+  third-guide crossings, rotated tiny inputs, preserved editable source curves,
+  no false sliver regions and native filled union area. Pronounced corners stop
+  trim runs; smooth joins and ordinary circle sampling remain continuous.
+- All 14 architectural presets produce distinct native sections and watertight
+  hollow test frames with unchanged base vertices. Their thumbnails match the
+  evaluated modifier's 33 section vertices at 32 segments, including undercuts.
+  The thumbnail sheet was visually checked. Native custom path points, handle
+  types and selection restore after injected batch failure. Escape and code
+  reload preserve a user's segment count below the preset's starting count.
+- Profile thumbnail changes took roughly 3–6 ms in background tests; unchanged
+  profiles reuse the cached image. Native preview evaluation leaves no temporary
+  scene, object or mesh IDs. These are CPU measurements, not live viewport FPS.
+- All 24 suites passed in isolated background Blender 5.2 processes; affected
+  profile, cancellation and reload checks were rerun after the final settings
+  restoration correction. Live interaction in the user's desktop was not used
+  for testing, and no user blend file was saved or reverted.
+
 ## Version 1.9.0
 
 - All 22 suites passed in separate background Blender 5.2 processes.

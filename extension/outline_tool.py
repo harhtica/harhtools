@@ -4,7 +4,7 @@ import time
 import bpy
 from mathutils import Vector
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty
-from . import outline_geometry, outline_snap, shortcuts
+from . import outline_geometry, outline_snap, outline_profiles, shortcuts
 
 STATE_KEY = 'harhtools_outline_preview'
 PREVIEW_INTERVAL = 1 / 30
@@ -24,6 +24,12 @@ def _snap_changed(_cfg, context):
     state = bpy.app.driver_namespace.get(STATE_KEY)
     if state:
         state.request_pointer(context)
+
+
+def _profile_changed(cfg,context):
+    if cfg.bevel_profile in outline_profiles.NAMES and cfg.bevel_segments<32:
+        cfg.bevel_segments=32
+    _changed(cfg,context)
 
 
 class HARHTOOLS_PG_outline(bpy.types.PropertyGroup):
@@ -47,11 +53,11 @@ class HARHTOOLS_PG_outline(bpy.types.PropertyGroup):
                                 description='Preview and add editable depth and perimeter bevel modifiers', update=_changed)
     bevel_depth: FloatProperty(name='Depth', default=.005, min=.000001, subtype='DISTANCE', unit='LENGTH', precision=4, update=_changed)
     bevel_width: FloatProperty(name='Bevel Width', default=.0003, min=.000001, subtype='DISTANCE', unit='LENGTH', precision=4, update=_changed)
-    bevel_segments: IntProperty(name='Segments', default=6, min=1, max=32, update=_changed)
+    bevel_segments: IntProperty(name='Segments', default=6, min=1, max=128, soft_max=64, update=_changed)
     bevel_profile: EnumProperty(name='Profile', default='ROUND', items=[
         ('ROUND','Rounded','Circular edge profile'),('CHAMFER','Chamfer','Single flat bevel face'),
         ('CONCAVE','Concave','Inward-curved profile'),('SQUARE','Soft Square','Fuller convex profile'),
-        ('CUSTOM','Custom','Adjust the native bevel shape value')], update=_changed)
+        ('CUSTOM','Custom','Adjust the native bevel shape value')]+outline_profiles.ITEMS, update=_profile_changed)
     bevel_shape: FloatProperty(name='Shape', default=.5, min=0, max=1, update=_changed)
 
 
@@ -560,7 +566,10 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             pass
         if cancel and context is not None:
             cfg = settings(context)
-            for name,value in self._original_settings.items():setattr(cfg,name,value)
+            # Preset selection can choose a starting detail count; restore the
+            # user's explicit segment count after that callback has run.
+            for name,value in sorted(self._original_settings.items(),key=lambda row:row[0]!='bevel_profile'):
+                setattr(cfg,name,value)
 
 
 def cancel_running(*_args):

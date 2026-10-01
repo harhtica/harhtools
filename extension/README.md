@@ -1,11 +1,11 @@
-# harhtools 1.9.0
+# harhtools 1.10.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.9.0.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.10.0.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -54,7 +54,9 @@ whose two control points are selected. Outlines must share a plane.
   fill includes that whole fill. **Alt + click/drag** removes touched fills only.
   Starting with Alt on an unfilled region does nothing.
 - **Edge Trim**: start with all source fragments retained; **Alt + drag** removes
-  the fragments between intersections; click/drag restores them.
+  the fragments between intersections or pronounced corners; click/drag restores
+  them. Corners with a turn greater than 45 degrees stop a trim run. Smooth curve
+  joins and fine circular tessellation stay continuous.
 - **Enter** creates one object per fill; **Esc / right-click** cancels; **Ctrl+Z** undoes a stroke.
 - Hover gives a faint preview. Larger dots mark intersections and a trail follows dragging.
 - **Gap Snap** bridges small gaps. Set it to zero to use the outlines exactly.
@@ -107,8 +109,11 @@ Use native Bezier guides when you want a small, editable set of pen handles.
 
 Planar Bezier and Poly inputs are supported. NURBS Shape Builder input is rejected with an
 explanation rather than silently flattened. The library can still preserve NURBS presets.
-Partially coincident duplicate cubic intervals are rejected before producing false slivers;
-remove the overlapping duplicate guide and retry. Complete duplicates are supported.
+Complete and partially shared straight/Bezier paths are supported, including
+reversed directions. The shared interval uses one original source in the preview
+and output; overlapping baselines are not stacked or turned into sliver regions.
+All original source objects remain unchanged. A straight Bezier that doubles back
+over itself must be split at its turning point before overlapping-edge trimming.
 
 This provides Illustrator-style merge/erase and editable paths, but is not a full Illustrator
 clone: Enter commits a new result, source guides remain unchanged, and Shift marquee is not
@@ -148,6 +153,16 @@ the native bevel shape. During Make Outline, shaded depth and bevel geometry
 appear in the workspace before **Enter**, using the same native modifiers as
 the final border. Changes are coalesced and unchanged geometry is cached.
 Escape removes the preview without creating an output object.
+
+The Profile menu also includes 14 architectural mouldings: **Fillet**, **Fascia**,
+**Cavetto**, **Scotia**, **Conge**, **Ovolo**, **Echinus**, **Torus**, **Astragal Bead**,
+**Thumb**, **Three-quarter Bead**, **Cyma Recta**, **Cyma Reversa**, and **Beak**.
+These are distinct native custom-profile paths, including flat lips and undercuts.
+The sections are normalized presets inspired by traditional mouldings; use Width
+to size them. Choosing one starts with at least 32 segments; the Segments control
+then allows 1–128. Low counts simplify the section and may lose small details.
+After creating a border, its custom profile can also be edited in the native
+Bevel modifier. **Update Selected Border** reapplies the selected preset.
 
 To change an existing flat mesh border, select it in Object Mode, choose settings
 here, then click **Update Selected Border**. This updates the two existing

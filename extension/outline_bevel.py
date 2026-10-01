@@ -2,6 +2,7 @@
 import math
 from collections import Counter
 import bpy
+from . import outline_profiles
 
 DEPTH_NAME='Harhtools Border Depth'
 BEVEL_NAME='Harhtools Border Bevel'
@@ -51,18 +52,22 @@ def _configure(obj,depth,width,segments,profile,shape,attribute_name):
     bevel.offset_type='OFFSET';bevel.width=width
     bevel.segments=1 if profile=='CHAMFER' else segments
     bevel.profile_type='SUPERELLIPSE';bevel.profile=shape;bevel.affect='EDGES'
+    if profile in outline_profiles.NAMES:
+        bevel.profile_type='CUSTOM'
+        outline_profiles.configure(bevel.custom_profile,profile,segments)
     bevel.miter_outer='MITER_SHARP';bevel.miter_inner='MITER_SHARP'
     bevel.use_clamp_overlap=True;bevel.harden_normals=True
+    obj.update_tag()
 
 
 def apply(objects,*,depth,width,segments=6,profile='ROUND',custom_shape=.5):
     """Update only our modifiers/weights, rolling back the whole batch on failure."""
     depth=float(depth);width=float(width);segments=int(segments)
-    shape=float(custom_shape) if profile=='CUSTOM' else PROFILES.get(profile)
+    shape=float(custom_shape) if profile=='CUSTOM' else .5 if profile in outline_profiles.NAMES else PROFILES.get(profile)
     if not all(math.isfinite(v) and v>0 for v in (depth,width)):
         raise ValueError('Border depth and bevel width must be positive.')
-    if shape is None or not math.isfinite(shape) or not 0<=shape<=1 or not 1<=segments<=32:
-        raise ValueError('Choose a valid bevel profile and 1 to 32 segments.')
+    if shape is None or not math.isfinite(shape) or not 0<=shape<=1 or not 1<=segments<=128:
+        raise ValueError('Choose a valid bevel profile and 1 to 128 segments.')
     objects=list(objects)
     if not objects:raise ValueError('Select a mesh border to update its bevel.')
     plans=[(obj,_weights(obj)) for obj in objects]
@@ -72,6 +77,7 @@ def apply(objects,*,depth,width,segments=6,profile='ROUND',custom_shape=.5):
         for obj,weights in plans:
             attr=obj.data.attributes.get(attribute_name)
             saved=dict(obj=obj,weights=[p.value for p in attr.data] if attr else None,
+                       custom_profile=outline_profiles.snapshot(obj.modifiers[BEVEL_NAME].custom_profile) if obj.modifiers.get(BEVEL_NAME) else None,
                        modifiers={name:({key:getattr(obj.modifiers[name],key) for key in props if hasattr(obj.modifiers[name],key)} if obj.modifiers.get(name) else None)
                                   for name,props in ((DEPTH_NAME,DEPTH_PROPS),(BEVEL_NAME,BEVEL_PROPS))})
             snapshots.append(saved)
@@ -92,6 +98,9 @@ def apply(objects,*,depth,width,segments=6,profile='ROUND',custom_shape=.5):
                     if mod:obj.modifiers.remove(mod)
                 elif mod:
                     for key,value in properties.items():setattr(mod,key,value)
+                    if name==BEVEL_NAME and saved['custom_profile'] is not None:
+                        outline_profiles.restore(mod.custom_profile,saved['custom_profile'],mod.segments)
+            obj.update_tag()
         raise
 
 

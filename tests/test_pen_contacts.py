@@ -24,18 +24,17 @@ def cubic(name,cp):
 reports=[]
 clear();cp=((0.,0.,0.),(.2,1.8,0.),(2.1,-.3,0.),(2.5,.8,0.))
 cubic('Full',cp);cubic('Partial',cg.subcurve(cp,.2,.8))
-try:sb.build_pen_arrangement(bpy.context)
-except ValueError as e:
-    assert 'overlap along only part' in str(e),str(e)
-    reports.append({'case':'partial coincident cubic','safe_rejection':True,'objects_unchanged':len(bpy.data.objects)==2})
-else:raise AssertionError('Partial overlap must fail safely before sliver regions are created.')
+arr,_=sb.build_pen_arrangement(bpy.context)
+assert not arr['regions'] and len(arr['edge_fragments'])==1
+assert len(bpy.data.objects)==2
+out=cg.curve_data(arr,edge_runs=arr['edge_fragments'])
+assert len(out.splines)==1 and len(out.splines[0].bezier_points)==2
+reports.append({'case':'partial coincident cubic','shared_once':True,'false_regions':0,'objects_unchanged':True})
 
 clear();cubic('First portion',cg.subcurve(cp,0,.7));cubic('Last portion',cg.subcurve(cp,.3,1))
-try:sb.build_pen_arrangement(bpy.context)
-except ValueError as e:
-    assert 'overlap along only part' in str(e),str(e)
-    reports.append({'case':'two overlapping partial cubics','safe_rejection':True})
-else:raise AssertionError('Partial overlap must fail safely.')
+arr,_=sb.build_pen_arrangement(bpy.context)
+assert not arr['regions'] and len(arr['edge_fragments'])==1
+reports.append({'case':'two overlapping partial cubics','shared_once':True,'false_regions':0})
 
 clear();cubic('Parabola',((0.,.1369,0.),(1/3,.1369-.74/3,0.),(2/3,.1369-2*.74/3+1/3,0.),(1.,.3969,0.)))
 cubic('Tangent',cg.line((-1.,0.,0.),(2.,0.,0.)))

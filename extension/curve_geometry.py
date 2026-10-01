@@ -155,12 +155,18 @@ def straight(cp):
     return length>1e-12 and max(abs(dx*(p[1]-cp[0][1])-dy*(p[0]-cp[0][0]))/length for p in cp[1:3])<5e-8
 
 
-def check_partial_coincidence(a,b):
-    """Refuse ambiguous overlapping guide intervals instead of creating slivers.
+def coincident_interval(a,b):
+    """Find a common path interval, including reversed and partial duplicates.
 
-    Exact full duplicates can use the existing shared CDT constraint chain.
-    Partial overlaps require source ownership choices, so they are rejected.
+    Matching cubic control polygons certify the entire interval, not just
+    sampled points. Straight paths may have different handle parameterization.
+    The caller retains one original source for each shared interval.
     """
+    linear=straight(a) and straight(b)
+    if linear:
+        direction=tuple(a[3][i]-a[0][i] for i in range(2));length=math.hypot(*direction)
+        if max(abs(direction[0]*(p[1]-a[0][1])-direction[1]*(p[0]-a[0][0]))/length for p in b)>1e-7:
+            return None
     contacts=[]
     for t in (0.0,1.0):
         u=nearest_parameter(b,a[int(t)*3])
@@ -168,16 +174,27 @@ def check_partial_coincidence(a,b):
     for u in (0.0,1.0):
         t=nearest_parameter(a,b[int(u)*3])
         if math.dist(evaluate(a,t),b[int(u)*3])<1e-7:contacts.append((t,u))
+    matches=[]
     for index,(t0,u0) in enumerate(contacts):
         for t1,u1 in contacts[index+1:]:
-            if abs(t1-t0)<1e-5 or abs(u1-u0)<1e-5:continue
+            if abs(t1-t0)<1e-10 or abs(u1-u0)<1e-10:continue
+            if math.dist(evaluate(a,t0),evaluate(a,t1))<1e-7:continue
             ca,cb=subcurve(a,t0,t1),subcurve(b,u0,u1)
             same=max(math.dist(x,y) for x,y in zip(ca,cb))<3e-7
-            if straight(a) and straight(b):same=True
+            if linear:
+                # Do not mistake a folded/backtracking straight cubic for a
+                # single interval: its parameter-to-position map is ambiguous.
+                for cp in (a,b):
+                    delta=tuple(cp[3][i]-cp[0][i] for i in range(2));den=sum(d*d for d in delta)
+                    h=[sum((p[i]-cp[0][i])*delta[i] for i in range(2))/den for p in cp]
+                    d0,d1,d2=(h[i+1]-h[i] for i in range(3));qa=d0-2*d1+d2;qb=2*(d1-d0)
+                    probes=[0.,1.]+([-qb/(2*qa)] if abs(qa)>1e-15 and 0<-qb/(2*qa)<1 else [])
+                    if min((qa*t+qb)*t+d0 for t in probes)<-1e-8:
+                        raise ValueError('An overlapping straight Bezier doubles back on itself. Split its turning point before trimming.')
+                same=True
             if not same:continue
-            complete=(min(t0,t1)<1e-6 and max(t0,t1)>1-1e-6 and min(u0,u1)<1e-6 and max(u0,u1)>1-1e-6)
-            if not complete:
-                raise ValueError('Some selected curve guides overlap along only part of the same curve. Remove the duplicate overlapping guide or split it at the overlap ends first. No geometry was changed.')
+            matches.append((t0,t1,u0,u1) if t0<t1 else (t1,t0,u1,u0))
+    return max(matches,key=lambda row:row[1]-row[0]) if matches else None
 
 
 def polynomial_roots_unit(a,b,c,d):
@@ -277,8 +294,11 @@ def prepare(primitives,basis):
             p=tuple((float(co[i])-float(origin[i]))/scale for i in range(3))
             cp.append((sum(p[i]*axis_u[i] for i in range(3)),sum(p[i]*axis_v[i] for i in range(3))))
         projected.append(tuple(cp))
-    samples=[adaptive(cp,2e-4) for cp in projected]
     cuts=[{0.0,1.0} for _ in primitives]
+    covered=defaultdict(list)
+    def redundant(k,lo,hi):
+        mid=(lo+hi)*.5
+        return any(a-1e-10<=mid<=b+1e-10 for a,b in covered[k])
     pair_cuts=defaultdict(lambda:[set(),set()])
     def record_contact(i,t,j,u):
         if i>j:i,j,t,u=j,i,u,t
@@ -290,15 +310,24 @@ def prepare(primitives,basis):
         for j in range(i+1,len(projected)):
             ai,bi=bounds[i],bounds[j]
             if ai[0]>bi[1]+1e-7 or bi[0]>ai[1]+1e-7 or ai[2]>bi[3]+1e-7 or bi[2]>ai[3]+1e-7:continue
-            b=projected[j];check_partial_coincidence(a,b)
+            b=projected[j];overlap=coincident_interval(a,b)
+            if overlap:
+                t0,t1,u0,u1=overlap
+                cuts[i].update((t0,t1));cuts[j].update((u0,u1))
+                covered[j].append((min(u0,u1),max(u0,u1)))
+                continue
             if straight(b):
                 for t,u in line_contacts(a,b):record_contact(i,t,j,u)
             if straight(a):
                 for u,t in line_contacts(b,a):record_contact(i,t,j,u)
     chords=[]
-    for k,rows in enumerate(samples):
-        for (t,a),(u,b) in zip(rows,rows[1:]):
-            chords.append((min(a[0],b[0]),max(a[0],b[0]),min(a[1],b[1]),max(a[1],b[1]),k,t,u,a,b))
+    for k,cp in enumerate(projected):
+        values=sorted(cuts[k])
+        for lo,hi in zip(values,values[1:]):
+            if redundant(k,lo,hi):continue
+            rows=[(lo+(hi-lo)*t,p) for t,p in adaptive(subcurve(cp,lo,hi),2e-4)]
+            for (t,a),(u,b) in zip(rows,rows[1:]):
+                chords.append((min(a[0],b[0]),max(a[0],b[0]),min(a[1],b[1]),max(a[1],b[1]),k,t,u,a,b))
     # Sweep broad phase avoids testing every chord against every other chord.
     active=[]
     for current in sorted(chords,key=lambda x:x[0]):
@@ -349,6 +378,7 @@ def prepare(primitives,basis):
     for k,cp in enumerate(projected):
         values=sorted(cuts[k]);previous=None
         for lo,hi in zip(values,values[1:]):
+            if redundant(k,lo,hi):previous=None;continue
             rows=adaptive(subcurve(cp,lo,hi),7e-5)
             for local,p in rows:
                 t=lo+(hi-lo)*local
@@ -360,19 +390,35 @@ def prepare(primitives,basis):
     return points,edges,spans
 
 def edge_fragments(arrangement):
-    """Group sampled constraints into trim-able runs between junctions."""
+    """Group constraints between junctions and pronounced pen-path corners."""
     edges=list(arrangement.get('constraint_edges',()))
     neighbors=defaultdict(list)
     for i,(a,b) in enumerate(edges):neighbors[a].append(i);neighbors[b].append(i)
+    stops={v for v,links in neighbors.items() if len(links)!=2}
+    spans=arrangement.get('source_spans',{});primitives=arrangement.get('source_primitives',())
+    def tangent(vertex,eid):
+        a,b=sorted(edges[eid]);item=spans.get((a,b))
+        if item:
+            k,t0,t1=item;t=t0 if vertex==a else t1
+            direction=1 if (t1-t0 if vertex==a else t0-t1)>0 else -1
+            delta=derivative(primitives[k]['cp'],t)
+            result=Vector((sum(delta[i]*arrangement['u'][i] for i in range(3)),
+                           sum(delta[i]*arrangement['v'][i] for i in range(3))))*direction
+            if result.length_squared>1e-20:return result.normalized()
+        other=b if vertex==a else a
+        return (arrangement['vertices'][other]-arrangement['vertices'][vertex]).normalized()
+    for vertex,links in neighbors.items():
+        if len(links)==2 and tangent(vertex,links[0]).dot(tangent(vertex,links[1]))>-math.cos(math.pi/4)+1e-6:
+            stops.add(vertex)
     pending=set(range(len(edges)));groups=[]
     while pending:
-        first=next((i for i in pending if any(len(neighbors[v])!=2 for v in edges[i])),next(iter(pending)));a,b=edges[first]
-        start=a if len(neighbors[a])!=2 else b if len(neighbors[b])!=2 else a
+        first=next((i for i in pending if any(v in stops for v in edges[i])),next(iter(pending)));a,b=edges[first]
+        start=a if a in stops else b if b in stops else a
         run=[];current=start;eid=first
         while eid in pending:
             pending.remove(eid);x,y=edges[eid];nxt=y if x==current else x
             run.append((current,nxt));current=nxt
-            if len(neighbors[current])!=2:break
+            if current in stops:break
             options=[j for j in neighbors[current] if j in pending]
             if not options:break
             eid=options[0]
