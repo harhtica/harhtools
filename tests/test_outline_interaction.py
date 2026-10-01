@@ -212,6 +212,15 @@ try:
         assert len(build_calls) == start_builds + 2 and h._results[0]['join_style'] == 'MITER'
         CHECKS.append('changing corner style invalidates the preview even at the same width')
 
+        start_builds=len(build_calls);cfg.bevel_enabled=True;tick(h)
+        assert h._surface and not h._error and len(build_calls)==start_builds
+        first_surface=h._surface
+        cfg.bevel_depth=.02;cfg.bevel_width=.003;cfg.bevel_profile='CONCAVE';tick(h)
+        assert h._surface is not first_surface and len(build_calls)==start_builds
+        cached=h._surface;tick(h);assert h._surface is cached
+        cfg.bevel_enabled=False;tick(h);assert h._surface is None and len(build_calls)==start_builds
+        CHECKS.append('native live bevel responds to all controls, reuses outline geometry and does no idle evaluation')
+
         cfg.thickness = 1.2
         tick(h)
         assert h._error and not h._results

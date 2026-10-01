@@ -4,7 +4,21 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.8.0
+## Version 1.9.0
+
+- **Selected Arc** works on a continuous vertex selection in mesh Edit Mode.
+  Round only one section while unselected geometry and its joins stay fixed.
+  Adjust the arc angle, roundness and wire vertex count with a live preview;
+  Enter keeps it and Escape restores the original geometry and selection.
+- **Circle / Arc** controls an existing circle in Object Mode: start angle,
+  arc amount, sides/segments down to a triangle, optional fill and triangle count.
+  Sampling points remain aligned when cutting an arc at the original resolution.
+- **Add Bevel** now shows a native profile cross-section in the sidebar and
+  shaded depth/bevel geometry in the workspace before Enter.
+- Fixes Shape Builder's false non-flat error on small translated circles using
+  double-precision transforms and plane fitting, without flattening geometry.
+
+## Included from 1.8.0
 
 - Mesh borders retain a straight seam between matching sharp corners after
   offset cleanup. Quad merging no longer removes the seam at concave junctions.
@@ -23,7 +37,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.8.0](https://harhtica.github.io/harhtools/harhtools-1.8.0.zip), or use
+[Download 1.9.0](https://harhtica.github.io/harhtools/harhtools-1.9.0.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

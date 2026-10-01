@@ -1,16 +1,47 @@
-# harhtools 1.8.0
+# harhtools 1.9.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.8.0.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.9.0.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
 Blender before installing. Keep one copy enabled. Installing from disk does not
 subscribe to the optional public update repository.
+
+## Selected Arc (mesh Edit Mode)
+
+Select the vertices of one continuous outline section, then choose **Selected
+Arc > Adjust Selected Arc** at the top of the harhtools tab. **Arc Amount** sets
+its angle and **Roundness** blends the original section toward a circular arc.
+**Reverse Bend** flips the arc to the other side. Changes appear in the workspace.
+Press **Enter** with the pointer over the viewport to keep the result, or **Esc**
+to restore the original geometry and selection.
+
+Only the selected section changes. Adjacent unselected joining vertices stay
+fixed, so selecting a lower tip leaves an upper tip unchanged. A wire section's
+**Vertices** slider resamples just that section. Sections attached to faces retain
+their original vertex count and connectivity. The selection must form one flat,
+connected, unbranched chain in the active mesh. A complete closed wire loop is
+also supported. Open sections stop at 359 degrees because their ends stay apart.
+
+## Circle / Arc (Object Mode)
+
+Select a complete mesh or Bezier/Poly circle and click **Edit Circle / Arc**.
+**Sides / Segments** sets full-circle resolution: 3 makes a triangle, while higher
+values approach a smooth circle. **Arc Amount** opens the circle, and **Start
+Angle** chooses the cut. **Fill** closes a partial arc with a straight chord.
+The panel displays the mesh's base vertex and triangle counts. Wire outlines
+have zero faces/triangles; these counts exclude modifiers.
+
+At the original resolution, the original sampling points remain in place for
+snapping; cuts add exact-angle endpoints. Center, radius and object transforms
+stay unchanged. **Restore Original Circle** restores the original datablock,
+including Bezier handles. Controlled curve output uses Poly splines after editing
+the sliders. Linked copies keep their original data. No shape preset is saved.
 
 ## Shape Builder
 
@@ -112,8 +143,11 @@ Existing results are not rewritten: regenerate an older border for this topology
 With **Result: Mesh Border**, enable **Add Bevel** and choose **Depth**, **Bevel
 Width**, **Profile**, and **Segments**. Profiles are **Rounded**, **Chamfer**,
 **Concave**, **Soft Square**, and **Custom** (an adjustable native bevel Shape
-value). Chamfer uses one segment. The flat outline preview stays responsive;
-depth and bevel are added when you press **Enter**.
+value). Chamfer uses one segment. A **Profile cross-section** thumbnail displays
+the native bevel shape. During Make Outline, shaded depth and bevel geometry
+appear in the workspace before **Enter**, using the same native modifiers as
+the final border. Changes are coalesced and unchanged geometry is cached.
+Escape removes the preview without creating an output object.
 
 To change an existing flat mesh border, select it in Object Mode, choose settings
 here, then click **Update Selected Border**. This updates the two existing

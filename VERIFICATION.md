@@ -1,5 +1,33 @@
 # Release verification
 
+## Version 1.9.0
+
+- All 22 suites passed in separate background Blender 5.2 processes.
+- Selected Arc reshapes only the chosen mesh chain. The bottom-half fixture
+  becomes a semicircle while upper vertices and joining anchors remain exact.
+  Tests cover local wire resampling, unchanged face connectivity, slider update
+  coalescing, confirmation, exact Escape restoration and external-edit protection.
+- Circle / Arc preserves original sampling points when cutting arcs, supports
+  64/96-point grids and three-sided output, reports native triangle counts, keeps
+  transforms and linked originals, and restores original Bezier data. Repeated
+  slider edits leave no obsolete datablocks, and controls survive code reload.
+- Shaded bevel previews evaluate native Solidify/Bevel in an isolated temporary
+  scene. All five profiles differ and leave no scratch scene/object/mesh IDs,
+  including on injected failure. Profile thumbnails use actual native bevel
+  sections; the generated pixels were visually checked. Draw/cache/state tests
+  use mocked GPU APIs, so this does not claim live viewport or FPS verification.
+- Reproduced Shape Builder's false depth error on six small translated circles.
+  Double-precision world transforms, centroid accumulation and plane fitting
+  fix it while retaining the existing rejection threshold for real nonplanarity.
+  The latest saved guides produce 10 regions in about 92 ms with source coordinates
+  unchanged. They have since been cut into open/branched guides, so bevel preview
+  timing used a separate synthetic 64-vertex circle: about 22 ms / 3,584 triangles.
+  These are background CPU measurements, not interactive frame rates.
+- Reload recovery removes any package modules loaded during cleanup, and outline
+  teardown does not import new modules. Restricted registration, orphaned-module
+  recovery, active-tool guards and rollback pass. The user scene was not saved,
+  reverted or modified during background verification.
+
 ## Version 1.8.0
 
 - Sharp corner correspondence is recovered after offset cleanup, checked against

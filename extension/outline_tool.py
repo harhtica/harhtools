@@ -38,21 +38,21 @@ class HARHTOOLS_PG_outline(bpy.types.PropertyGroup):
         ('ROUND', 'Round', 'Use circular joins where corners open')], update=_changed)
     output_type: EnumProperty(name='Result', default='MESH', items=[
         ('MESH', 'Mesh Border', 'Connected border faces ready for mesh editing and extrusion'),
-        ('CURVE', 'Curve Outline', 'A filled outline with sampled Poly spline boundaries')])
+        ('CURVE', 'Curve Outline', 'A filled outline with sampled Poly spline boundaries')], update=_changed)
     snap_geometry: BoolProperty(name='Snap to Geometry', default=False,
                                 description='Snap thickness to nearby coplanar curves and mesh edges while dragging', update=_snap_changed)
     hide_sources: BoolProperty(name='Hide Original Shapes', default=True,
                                description='Keep the original shapes recoverable but hide their filled centers after creating outlines')
     bevel_enabled: BoolProperty(name='Add Bevel', default=False,
-                                description='Add editable depth and perimeter bevel modifiers to the mesh result')
-    bevel_depth: FloatProperty(name='Depth', default=.005, min=.000001, subtype='DISTANCE', unit='LENGTH', precision=4)
-    bevel_width: FloatProperty(name='Bevel Width', default=.0003, min=.000001, subtype='DISTANCE', unit='LENGTH', precision=4)
-    bevel_segments: IntProperty(name='Segments', default=6, min=1, max=32)
+                                description='Preview and add editable depth and perimeter bevel modifiers', update=_changed)
+    bevel_depth: FloatProperty(name='Depth', default=.005, min=.000001, subtype='DISTANCE', unit='LENGTH', precision=4, update=_changed)
+    bevel_width: FloatProperty(name='Bevel Width', default=.0003, min=.000001, subtype='DISTANCE', unit='LENGTH', precision=4, update=_changed)
+    bevel_segments: IntProperty(name='Segments', default=6, min=1, max=32, update=_changed)
     bevel_profile: EnumProperty(name='Profile', default='ROUND', items=[
         ('ROUND','Rounded','Circular edge profile'),('CHAMFER','Chamfer','Single flat bevel face'),
         ('CONCAVE','Concave','Inward-curved profile'),('SQUARE','Soft Square','Fuller convex profile'),
-        ('CUSTOM','Custom','Adjust the native bevel shape value')])
-    bevel_shape: FloatProperty(name='Shape', default=.5, min=0, max=1)
+        ('CUSTOM','Custom','Adjust the native bevel shape value')], update=_changed)
+    bevel_shape: FloatProperty(name='Shape', default=.5, min=0, max=1, update=_changed)
 
 
 def source_signature(objects):
@@ -285,6 +285,8 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         self._area = context.area; self._window = context.window; self._workspace = context.workspace
         self._dragging = False; self._updating_settings = False; self._results = []; self._error = ''
         self._batches = None; self._shader = None; self._snap_hit = None; self._measure = None
+        self._surface = None; self._surface_batch = None; self._surface_shader = None
+        self._outline_key = None
         self._region = next(r for r in self._area.regions if r.type == 'WINDOW')
         self._view = self._area.spaces.active.region_3d
         cfg = settings(context)
@@ -349,19 +351,27 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         if self._done:
             return
         cfg = settings(context)
-        key = (float(cfg.thickness), cfg.direction, cfg.join_style)
+        outline_key = (float(cfg.thickness), cfg.direction, cfg.join_style)
+        bevel = bevel_options(cfg)
+        key = (outline_key, tuple(sorted(bevel.items())) if bevel else None)
         self._preview_dirty = False
         if key == getattr(self, '_preview_key', None):
             return  # Identical valid or invalid widths do not need another solve.
         self._preview_key = key
         try:
-            prepared = [preview if cfg.thickness > preview['tolerance'] * 8 else precise
-                        for preview, precise in zip(self._preview_prepared, self._prepared)]
-            self._results = make_results(prepared, cfg.thickness, cfg.direction, cfg.join_style)
+            if outline_key != getattr(self,'_outline_key',None):
+                prepared = [preview if cfg.thickness > preview['tolerance'] * 8 else precise
+                            for preview, precise in zip(self._preview_prepared, self._prepared)]
+                self._results = make_results(prepared, cfg.thickness, cfg.direction, cfg.join_style)
+                self._outline_key = outline_key
+            self._surface = None
+            if bevel:
+                from . import outline_preview
+                self._surface = outline_preview.surface(self._results,bevel)
             self._error = ''
         except Exception as exc:
-            self._results = []; self._error = str(exc)
-        self._batches = None
+            self._results = []; self._surface = None; self._outline_key=None; self._error = str(exc)
+        self._batches = None; self._surface_batch=None
         self._workspace.status_text_set('Make Outline | Drag: thickness | S: geometry snap | Enter: create | Esc: cancel'
             + (' | ' + self._error if self._error else ''))
         self._area.tag_redraw()
@@ -494,9 +504,15 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             self._batches = batch_for_shader(shader, 'LINES', {'pos': lines}) if lines else False
         old_blend = gpu.state.blend_get(); old_depth = gpu.state.depth_test_get(); old_mask = gpu.state.depth_mask_get()
         try:
+            if getattr(self,'_surface',None):
+                if getattr(self,'_surface_shader',None) is None:self._surface_shader=gpu.shader.from_builtin('SMOOTH_COLOR')
+                if getattr(self,'_surface_batch',None) is None:
+                    self._surface_batch=batch_for_shader(self._surface_shader,'TRIS',self._surface)
+                gpu.state.blend_set('NONE');gpu.state.depth_test_set('LESS_EQUAL');gpu.state.depth_mask_set(True)
+                self._surface_shader.bind();self._surface_batch.draw(self._surface_shader)
             gpu.state.blend_set('ALPHA'); gpu.state.depth_test_set('NONE'); gpu.state.depth_mask_set(False)
             shader.bind(); shader.uniform_float('viewportSize', gpu.state.viewport_get()[2:])
-            shader.uniform_float('lineWidth', 2 * bpy.context.preferences.system.ui_scale)
+            shader.uniform_float('lineWidth', (1 if getattr(self,'_surface',None) else 2) * bpy.context.preferences.system.ui_scale)
             cfg = shortcuts.settings()
             shader.uniform_float('color', (*cfg.accent_color, 1))
             if self._batches:
@@ -531,6 +547,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             self._wm.event_timer_remove(timer)
             self._timer = None
         self._pending_mouse = None
+        self._surface=None;self._surface_batch=None;self._surface_shader=None
         for name in ('_handler', '_cursor_handler'):
             handler = getattr(self, name, None)
             if handler:
@@ -563,8 +580,11 @@ def draw_panel(layout, context):
             box.prop(cfg,'bevel_depth');box.prop(cfg,'bevel_width');box.prop(cfg,'bevel_profile')
             if cfg.bevel_profile=='CUSTOM':box.prop(cfg,'bevel_shape')
             if cfg.bevel_profile!='CHAMFER':box.prop(cfg,'bevel_segments')
+            from . import outline_preview
+            box.label(text='Profile cross-section')
+            box.template_icon(icon_value=outline_preview.profile_icon(cfg),scale=5.0)
             box.operator('object.harhtools_border_bevel',text='Update Selected Border')
-            if state:box.label(text='Bevel is added when you press Enter.')
+            if state:box.label(text='Live bevel preview · Enter to keep')
     box.prop(cfg, 'snap_geometry'); box.prop(cfg, 'hide_sources')
     row = box.row(); row.enabled = state is None
     row.operator('view3d.harhtools_make_outline', text='Make Outline', icon='MOD_SOLIDIFY')
@@ -586,6 +606,12 @@ def register():
 
 def unregister():
     cancel_running()
+    # Never import during teardown: a failed registration may have removed
+    # the package root while leaving this child loaded.
+    import sys
+    preview = sys.modules.get(__package__ + '.outline_preview')
+    if preview is not None:
+        preview.clear()
     if cancel_running in bpy.app.handlers.load_pre:
         bpy.app.handlers.load_pre.remove(cancel_running)
     if hasattr(bpy.types.WindowManager, 'harhtools_outline'):

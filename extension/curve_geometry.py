@@ -40,6 +40,9 @@ def second_derivative(cp,t):
 
 def line(a,b):return (tuple(a),lerp(a,b,1/3),lerp(a,b,2/3),tuple(b))
 
+def world_point(matrix,point):
+    return tuple(math.fsum(matrix[i][j]*float(point[j]) for j in range(3))+matrix[i][3] for i in range(3))
+
 def collect(context):
     editing=context.mode in {'EDIT_CURVE','EDIT_MESH'}
     objects=list(context.objects_in_mode_unique_data if editing else context.selected_objects)
@@ -56,7 +59,7 @@ def collect(context):
                         a,b=points[i],points[(i+1)%len(points)]
                         if a.hide or b.hide:continue
                         if editing and not (a.select_control_point and b.select_control_point):continue
-                        cp=[tuple(matrix@p) for p in (a.co,a.handle_right,b.handle_left,b.co)]
+                        cp=[world_point(matrix,p) for p in (a.co,a.handle_right,b.handle_left,b.co)]
                         result.append({'cp':cp,'source':obj.name,'spline':si,'segment':i,'kind':'BEZIER'})
                 elif spline.type=='POLY':
                     points=spline.points
@@ -64,7 +67,7 @@ def collect(context):
                         a,b=points[i],points[(i+1)%len(points)]
                         if a.hide or b.hide:continue
                         if editing and not (a.select and b.select):continue
-                        result.append({'cp':line(matrix@a.co.xyz,matrix@b.co.xyz),'source':obj.name,'spline':si,'segment':i,'kind':'LINE'})
+                        result.append({'cp':line(world_point(matrix,a.co),world_point(matrix,b.co)),'source':obj.name,'spline':si,'segment':i,'kind':'LINE'})
                 else:
                     raise ValueError('Editable output supports Bezier and Poly splines. Convert NURBS to Bezier first; no automatic flattening was performed.')
         else:
@@ -86,7 +89,7 @@ def collect(context):
                         q=radius*(axis_u*math.cos(b)+axis_v*math.sin(b))
                         dp=radius*(-axis_u*math.sin(a)+axis_v*math.cos(a))
                         dq=radius*(-axis_u*math.sin(b)+axis_v*math.cos(b))
-                        result.append({'cp':[tuple(matrix@v) for v in (p,p+k*dp,q-k*dq,q)],'source':obj.name,'segment':len(result),'kind':'CIRCLE_CUBIC'})
+                        result.append({'cp':[world_point(matrix,v) for v in (p,p+k*dp,q-k*dq,q)],'source':obj.name,'segment':len(result),'kind':'CIRCLE_CUBIC'})
                 if len(result)>before:names.append(obj.name)
                 continue
             bm=bmesh.from_edit_mesh(obj.data).copy() if obj.mode=='EDIT' else bmesh.new()
@@ -94,7 +97,7 @@ def collect(context):
                 if obj.mode!='EDIT':bm.from_mesh(obj.data)
                 for i,e in enumerate(bm.edges):
                     if e.hide or any(v.hide for v in e.verts) or (editing and not e.select):continue
-                    result.append({'cp':line(*(matrix@v.co for v in e.verts)),'source':obj.name,'segment':i,'kind':'LINE'})
+                    result.append({'cp':line(*(world_point(matrix,v.co) for v in e.verts)),'source':obj.name,'segment':i,'kind':'LINE'})
             finally:bm.free()
         if len(result)>before:names.append(obj.name)
     if not result:raise ValueError('Select visible Bezier segments or mesh edges first.')

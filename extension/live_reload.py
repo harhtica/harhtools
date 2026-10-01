@@ -77,7 +77,7 @@ def _busy_reason(context=None):
         return 'Blender is busy'
     keys = {'arch_tools_shape_builder', 'harhtools_array_preview',
             'harhtools_shape_library_drag', 'harhtools_shortcut_capture',
-            'harhtools_section_drag', 'harhtools_outline_preview', 'harhtools_outline'}
+            'harhtools_section_drag', 'harhtools_outline_preview', 'harhtools_outline', 'harhtools_arc_preview'}
     for name, module in tuple(sys.modules.items()):
         if module is not None and name.startswith(_ROOT_NAME + '.'):
             for attribute in ('_STATE_KEY', 'STATE_KEY', '_DRAG_KEY', '_CAPTURE_KEY', '_SECTION_DRAG_KEY'):

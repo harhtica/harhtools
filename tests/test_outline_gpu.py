@@ -197,6 +197,22 @@ def measurement_and_theme():
     return {'measurement_drawn_only_during_drag': True, 'theme_properties_resolve': True}
 
 
+def shaded_bevel():
+    h=Harness();h._surface={'pos':[(0,0,0),(1,0,0),(0,1,-.2)],'color':[(.8,.8,.8,1)]*3}
+    draws=frame(h.draw_preview)
+    assert [draw[0].mode for draw in draws]==['TRIS','LINES']
+    assert h._surface_shader.name=='SMOOTH_COLOR' and h._surface_batch.data['pos'][2][2]==-.2
+    count=len(CREATED);batch=h._surface_batch;frame(h.draw_preview)
+    assert h._surface_batch is batch and len(CREATED)==count
+    FAIL['draw']=True
+    try:frame(h.draw_preview)
+    except RuntimeError:pass
+    else:raise AssertionError('Expected draw failure')
+    finally:FAIL['draw']=False
+    assert state_tuple()==('ADDITIVE','LESS_EQUAL',True)
+    return {'shaded_depth_geometry_before_lines':True,'cached_gpu_buffers':True,'restored_depth_blend_and_mask':True}
+
+
 def failure_cleanup():
     for stage in ('batch','uniform','draw'):
         h = Harness()
@@ -283,6 +299,7 @@ try:
          patch.object(ot.shortcuts, 'settings', lambda *a,**kw:theme):
         run('preview geometry cache and actual refresh invalidation', geometry_cache)
         run('measurement and theme uniforms', measurement_and_theme)
+        run('native bevel surface drawing and cache', shaded_bevel)
         run('GPU state restoration under injected failures', failure_cleanup)
         run('empty and failed outline preview', empty_and_error)
         run('draw callback guards', guards)

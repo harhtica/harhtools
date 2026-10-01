@@ -95,7 +95,7 @@ def _recover_disabled():
                    if name == root_name or name.startswith(root_name + '.')}
     # A failed register() can have cleaned only part of its classes. Attempt all
     # Harhtools cleanup hooks; never unload unrelated packages or change modes.
-    for suffix in ('live_reload', 'centering', 'outline_tool', 'array_tool',
+    for suffix in ('live_reload', 'centering', 'edit_arc', 'circle_arc', 'outline_tool', 'array_tool',
                    'shape_builder', 'shape_library', 'shortcuts', 'icons'):
         module = old_modules.get(root_name + '.' + suffix)
         cleanup = getattr(module, 'unregister', None)
@@ -104,7 +104,11 @@ def _recover_disabled():
                 cleanup()
             except Exception as exc:
                 print('Harhtools recovery cleanup:', suffix, str(exc))
-    for name in old_modules:
+    # Cleanup can lazily import another child (or even the package root).
+    # Discard the complete current prefix, not only the pre-cleanup snapshot.
+    for name in list(sys.modules):
+        if name != root_name and not name.startswith(root_name + '.'):
+            continue
         sys.modules.pop(name, None)
     parent_name, _, child_name = root_name.rpartition('.')
     parent = sys.modules.get(parent_name)
@@ -117,6 +121,8 @@ def _recover_disabled():
         package = addon_utils.enable(root_name, default_set=True, persistent=True,
                                      handle_error=errors.append)
         if package is None:
+            import traceback
+            for error in errors:traceback.print_exception(error)
             raise RuntimeError('Harhtools could not be enabled: ' + '; '.join(map(str, errors)))
         for name in sorted(sources):
             importlib.import_module(name)

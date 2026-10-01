@@ -109,6 +109,18 @@ def report_case(name,transform=None,facing=None,make_fixture=fixture):
     return report,data,arr
 
 reports=[]
+def historical_float_basis(points,facing=None):
+    # Freeze the old arithmetic solely to reproduce the historical native-fill
+    # failure, even now that precise plane fitting can avoid that failure too.
+    points=[Vector(p) for p in points];origin=sum(points,Vector())/len(points)
+    centered=[p-origin for p in points];u=max(centered,key=lambda p:p.length_squared).normalized()
+    normal=max((u.cross(p) for p in centered),key=lambda p:p.length_squared).normalized()
+    if facing is not None:
+        if normal.dot(facing)<0:normal.negate()
+    elif normal[max(range(3),key=lambda i:abs(normal[i]))]<0:normal.negate()
+    v=normal.cross(u).normalized();scale=max(p.length for p in centered)
+    return origin,u,v,normal,scale,[Vector((p.dot(u)/scale,p.dot(v)/scale)) for p in centered]
+
 for name,transform,facing in [('XY',None,None),('XY back',None,Vector((0,0,-1))),('YZ translated',Matrix.Translation((0,26,0))@Matrix.Rotation(math.pi/2,4,'Y'),None),('YZ translated back',Matrix.Translation((0,26,0))@Matrix.Rotation(math.pi/2,4,'Y'),Vector((-1,0,0)))]:
     report,data,arr=report_case(name,transform,facing);reports.append(report)
     assert report['relative_area_error']<.005,report
@@ -120,10 +132,14 @@ for facing in [Vector((1,0,0)),Vector((-1,0,0))]:
     assert report['removed']>0 and report['max_adjustment']<=report['precision'],report
     if facing.x>0:
         cleanup=cg._clean_numerical_junctions
+        precise_basis=sb.planar_basis;precise_world=cg.world_point
         try:
+            sb.planar_basis=historical_float_basis;cg.world_point=lambda matrix,point:tuple(matrix@Vector(point[:3]))
+            historical,_=sb.build_pen_arrangement(bpy.context,facing=facing)
             cg._clean_numerical_junctions=lambda controls,cyclic,tolerance:(controls,0,0.)
-            before=cg.curve_data(arr,set(range(len(arr['regions']))))
-        finally:cg._clean_numerical_junctions=cleanup
+            before=cg.curve_data(historical,set(range(len(historical['regions']))))
+        finally:
+            cg._clean_numerical_junctions=cleanup;sb.planar_basis=precise_basis;cg.world_point=precise_world
         assert area(before)<report['expected_area']*.5,'Fixture no longer reproduces the real native-fill regression'
         diagnostic(before,data)
     # A confirmed editable output must remain usable as the next pen source.

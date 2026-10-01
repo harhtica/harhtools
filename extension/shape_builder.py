@@ -158,24 +158,30 @@ def collect_selection(context):
 
 
 def planar_basis(points, facing=None):
-    origin = sum(points,Vector())/len(points)
-    centered = [p-origin for p in points]
-    u = max(centered,key=lambda v:v.length_squared).normalized()
-    cross = max((u.cross(p) for p in centered),key=lambda v:v.length_squared)
-    if cross.length_squared<1e-20:
+    # Fit in centered doubles. A float32 running sum can move the centroid
+    # outside even an exactly flat set of small, translated circles.
+    dot=lambda a,b:math.fsum(x*y for x,y in zip(a,b))
+    cross3=lambda a,b:(a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0])
+    unit=lambda a:tuple(x/math.sqrt(dot(a,a)) for x in a)
+    origin=tuple(math.fsum(p[i] for p in points)/len(points) for i in range(3))
+    centered=[tuple(p[i]-origin[i] for i in range(3)) for p in points]
+    farthest=max(centered,key=lambda p:dot(p,p));scale=math.sqrt(dot(farthest,farthest))
+    if scale<1e-10:raise ValueError('These edges do not enclose a two-dimensional area.')
+    u=unit(farthest)
+    cross=max((cross3(u,p) for p in centered),key=lambda p:dot(p,p))
+    if dot(cross,cross)<1e-20:
         raise ValueError('These edges do not enclose a two-dimensional area.')
-    normal = cross.normalized()
+    normal=unit(cross)
     if facing is not None:
-        if normal.dot(facing)<0: normal.negate()
+        if dot(normal,facing)<0:normal=tuple(-x for x in normal)
     elif normal[max(range(3),key=lambda i:abs(normal[i]))]<0:
-        normal.negate()
-    v = normal.cross(u).normalized()
-    scale = max(p.length for p in centered)
+        normal=tuple(-x for x in normal)
+    v=unit(cross3(normal,u))
     tolerance = max(scale*2e-6,1e-7)
-    if any(abs(p.dot(normal))>tolerance for p in centered):
+    if any(abs(dot(p,normal))>tolerance for p in centered):
         raise ValueError('Selected wires must lie in one flat plane. Exclude depth edges or beveled curves.')
-    xy = [Vector((p.dot(u)/scale,p.dot(v)/scale)) for p in centered]
-    return origin,u,v,normal,scale,xy
+    xy=[Vector((dot(p,u)/scale,dot(p,v)/scale)) for p in centered]
+    return Vector(origin),Vector(u),Vector(v),Vector(normal),scale,xy
 
 
 def close_tiny_gaps(xy, edges, tolerance):
@@ -307,11 +313,12 @@ def build_arrangement(points, edges, facing=None, gap_snap=0.0, source_spans=Non
 
 def build_pen_arrangement(context,facing=None,gap_snap=0.0):
     primitives,names=curve_geometry.collect(context)
-    control_points=[Vector(p) for s in primitives for p in s['cp']]
+    control_points=[p for s in primitives for p in s['cp']]
     try:basis=planar_basis(control_points,facing)
     except ValueError as exc:
         if 'two-dimensional area' not in str(exc):raise
-        origin=sum(control_points,Vector())/len(control_points)
+        control_points=[Vector(p) for p in control_points]
+        origin=Vector(tuple(math.fsum(p[i] for p in control_points)/len(control_points) for i in range(3)))
         delta=max((p-origin for p in control_points),key=lambda p:p.length_squared)
         if delta.length<1e-10:raise ValueError('The selected segments have zero length.')
         u=delta.normalized();normal=Vector(facing) if facing is not None else Vector((0,0,1))
@@ -516,6 +523,7 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
         return (context.area is not None and context.area.type=='VIEW_3D'
                 and not bpy.app.driver_namespace.get('harhtools_array_preview')
                 and not bpy.app.driver_namespace.get('harhtools_outline_preview')
+                and not bpy.app.driver_namespace.get('harhtools_arc_preview')
                 and context.mode in {'OBJECT','EDIT_MESH','EDIT_CURVE'}
                 and any(o.type in {'MESH','CURVE'} for o in
                         (context.objects_in_mode_unique_data if context.mode in {'EDIT_MESH','EDIT_CURVE'} else context.selected_objects)))

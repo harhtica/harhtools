@@ -324,6 +324,9 @@ class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
             content.label(text='Transform')
             draw_center_box(content,context)
         else:
+            from . import circle_arc,edit_arc
+            if context.mode=='EDIT_MESH':edit_arc.draw_panel(content,context)
+            else:circle_arc.draw_panel(content,context)
             for index,section in enumerate(shortcuts.section_order(shortcuts.settings(context),'TOOLS')):
                 if index:content.separator(factor=.4)
                 {'BUILDER':draw_builder_box,'LIBRARY':shape_library.draw_panel}[section](content,context)
