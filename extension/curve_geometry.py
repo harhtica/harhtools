@@ -1,7 +1,9 @@
-"""Planar pen-curve sources and exact cubic subcurve reconstruction.
+"""Planar pen curves, source-subcurve reconstruction and bounded junction repair.
 
 Polyline chords are used only for picking/region topology. Saved Bezier output
 uses subintervals of the original control polygons, never a fit to those chords.
+Precision-scale junction detours are welded with explicitly recorded endpoint
+and handle displacement; meaningful spans and source guides are preserved.
 Intersection parameters are refined on the original cubics before tessellation.
 """
 import math
@@ -266,8 +268,11 @@ def prepare(primitives,basis):
     for primitive in primitives:
         cp=[]
         for co in primitive['cp']:
-            p=(Vector(co)-origin)/scale
-            cp.append((p.dot(axis_u),p.dot(axis_v)))
+            # Do the subtraction in double precision before projecting. A
+            # float32 world Vector near a translated workshop can lose several
+            # microns and turn one intended junction into microscopic spans.
+            p=tuple((float(co[i])-float(origin[i]))/scale for i in range(3))
+            cp.append((sum(p[i]*axis_u[i] for i in range(3)),sum(p[i]*axis_v[i] for i in range(3))))
         projected.append(tuple(cp))
     samples=[adaptive(cp,2e-4) for cp in projected]
     cuts=[{0.0,1.0} for _ in primitives]
@@ -410,12 +415,70 @@ def paths_from_edges(edges,vertices,directed=True):
         if path:paths.append((path,current==start))
     return paths
 
+def _source_precision(arrangement):
+    """World-coordinate float32 precision, not an arbitrary modeling distance."""
+    # Translation perpendicular to the drawing plane cannot reduce its 2D
+    # precision. Weight coordinate uncertainty by its in-plane contribution.
+    weights=[math.hypot(arrangement['u'][i],arrangement['v'][i]) for i in range(3)]
+    ulp=max((math.ldexp(1.0,math.frexp(abs(float(value)))[1]-24)*weights[i]
+             for primitive in arrangement.get('source_primitives',()) for point in primitive['cp']
+             for i,value in enumerate(point) if value),default=0.)
+    return max(4*ulp,float(arrangement.get('scale',1.))*2e-7,1e-12)
+
+def _control_diameter(controls):
+    points=[point for cp in controls for point in cp]
+    return math.sqrt(sum((max(point[i] for point in points)-min(point[i] for point in points))**2 for i in range(3)))
+
+def _clean_numerical_junctions(controls,cyclic,tolerance):
+    """Weld only coordinate-precision detours between substantial curve spans.
+
+    Native 2D Curve filling is unstable on tiny triangular detours left by
+    float32 translated intersections. A tiny *region* is never removed: both
+    neighboring spans must be over sixteen times larger than the precision
+    threshold, and the entire removed chain must fit inside that threshold.
+    Joining moves endpoints and their adjacent handles together; all other
+    source controls remain unchanged. Displacement is returned for diagnostics.
+    """
+    if len(controls)<3:return controls,0,0.
+    controls=[[point.copy() for point in cp] for cp in controls]
+    if cyclic:
+        start=next((i for i,cp in enumerate(controls) if _control_diameter([cp])>16*tolerance),None)
+        if start is None:return controls,0,0.
+        controls=controls[start:]+controls[:start]
+    result=[];pending=[];removed=0;adjustment=0.
+    def join(previous,following):
+        nonlocal adjustment
+        shared=(previous[3]+following[0])*.5
+        before,after=shared-previous[3],shared-following[0]
+        adjustment=max(adjustment,before.length,after.length)
+        previous[2]+=before;previous[3]=shared.copy()
+        following[1]+=after;following[0]=shared.copy()
+    for cp in controls:
+        if _control_diameter([cp])<=tolerance:
+            pending.append(cp);continue
+        if pending:
+            if (result and _control_diameter([result[-1]])>16*tolerance
+                    and _control_diameter([cp])>16*tolerance
+                    and _control_diameter(pending+[[result[-1][3],cp[0]]])<=tolerance):
+                join(result[-1],cp);removed+=len(pending)
+            else:result.extend(pending)
+            pending=[]
+        result.append(cp)
+    if pending:
+        if (cyclic and len(result)>1 and _control_diameter([result[-1]])>16*tolerance
+                and _control_diameter([result[0]])>16*tolerance
+                and _control_diameter(pending+[[result[-1][3],result[0][0]]])<=tolerance):
+            join(result[-1],result[0]);removed+=len(pending)
+        else:result.extend(pending)
+    return result,removed,adjustment
+
 def curve_data(arrangement,selected=(),*,edge_runs=None,name='Shape Builder'):
     edges=boundary_edges(arrangement,selected) if edge_runs is None else [e for run in edge_runs for e in run]
     if not edges:raise ValueError('No retained curve segments remain.')
     paths=paths_from_edges(edges,arrangement['vertices'],directed=edge_runs is None)
     primitives=arrangement.get('source_primitives',[]);provenance=arrangement.get('source_spans',{})
     data=bpy.data.curves.new(name,'CURVE');data.dimensions='2D';data.fill_mode='BOTH';data.resolution_u=24
+    removed_total=0;maximum_adjustment=0.;precision=_source_precision(arrangement)
     try:
         for path,cyclic in paths:
             spans=[]
@@ -439,9 +502,13 @@ def curve_data(arrangement,selected=(),*,edge_runs=None,name='Shape Builder'):
                 else:cp=subcurve(primitives[k]['cp'],a,b)
                 local=[]
                 for p in cp:
-                    delta=Vector(p)-arrangement['origin']
-                    local.append(Vector((delta.dot(arrangement['u']),delta.dot(arrangement['v']),0)))
+                    delta=tuple(float(p[i])-float(arrangement['origin'][i]) for i in range(3))
+                    local.append(Vector((sum(delta[i]*arrangement['u'][i] for i in range(3)),
+                                         sum(delta[i]*arrangement['v'][i] for i in range(3)),0)))
                 controls.append(local)
+            if edge_runs is None:
+                controls,removed,adjustment=_clean_numerical_junctions(controls,cyclic,precision)
+                removed_total+=removed;maximum_adjustment=max(maximum_adjustment,adjustment)
             spline=data.splines.new('BEZIER');spline.use_cyclic_u=cyclic
             spline.bezier_points.add(len(controls)-1 if cyclic else len(controls))
             for i,p in enumerate(spline.bezier_points):
@@ -449,7 +516,10 @@ def curve_data(arrangement,selected=(),*,edge_runs=None,name='Shape Builder'):
                 if i<len(controls):p.co=controls[i][0];p.handle_right=controls[i][1]
                 else:p.co=controls[-1][3];p.handle_right=p.co
                 p.handle_left=controls[i-1][2] if i>0 else controls[-1][2] if cyclic else p.co
-        data['harhtools_geometry']='Original Bezier subcurves; source guides unchanged'
+        data['harhtools_geometry']='Original Bezier subcurves with bounded float-precision junction repair; source guides unchanged'
+        data['harhtools_junction_precision']=precision
+        data['harhtools_junction_spans_removed']=removed_total
+        data['harhtools_junction_max_adjustment']=maximum_adjustment
         return data
     except Exception:
         bpy.data.curves.remove(data);raise

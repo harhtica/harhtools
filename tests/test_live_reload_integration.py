@@ -13,6 +13,7 @@ import sys
 import tempfile
 
 import bpy
+import addon_utils
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = Path(__file__).resolve().parent / '_artifacts'
@@ -51,9 +52,22 @@ def reload_ready(watcher):
 
 
 copy_isolated(args.old_source or ROOT / 'extension')
-package = importlib.import_module('real_reload_fixture')
-bpy.context.preferences.addons.new().module = 'real_reload_fixture'
-package.register()
+enable_errors = []
+# The real Preferences enable path imports/registers inside RestrictBlend. Direct
+# package.register() misses that contract and previously hid the _RestrictData bug.
+package = addon_utils.enable('real_reload_fixture', default_set=True, persistent=True,
+                             handle_error=enable_errors.append)
+assert package is not None and not enable_errors, enable_errors
+if hasattr(package, 'live_reload'):
+    from _bpy_restrict_state import RestrictBlend
+    # Disabling/re-registering the watcher is also safe in that restricted scope.
+    with RestrictBlend():
+        package.live_reload.unregister()
+        package.live_reload.register()
+    assert bpy.app.timers.is_registered(package.live_reload._poll)
+    assert package.live_reload._poll() == 2.0
+    assert bpy.context.window_manager.harhtools_live_reload_version == package.live_reload._loaded_version
+print('PASS: addon_utils.enable registers the real package through Blender restricted context')
 cube = bpy.context.active_object
 cube['unsaved_reload_data'] = 123
 wm = bpy.context.window_manager
@@ -128,5 +142,6 @@ try:
     assert watcher._failed_version == '90.0.2'
     print('PASS: actual partial registration rollback restores old tools and settings')
 finally:
-    sys.modules['real_reload_fixture'].unregister()
-    bpy.context.preferences.addons.remove(bpy.context.preferences.addons['real_reload_fixture'])
+    # This fixture has no extension repository to refresh; skip global repo-cache
+    # maintenance so the test never writes the user's extension cache.
+    addon_utils.disable('real_reload_fixture', default_set=True, refresh_handled=True)

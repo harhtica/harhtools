@@ -40,11 +40,14 @@ def _manifest():
 def _set_status(message):
     global _message
     _message = message
-    for wm in bpy.data.window_managers:
+    # Blender intentionally exposes _RestrictData during Preferences enable.
+    # Register RNA/timers there, then publish UI status on the first idle tick.
+    managers = getattr(bpy.data, 'window_managers', ())
+    for wm in managers:
         if hasattr(wm, _PROPERTIES[1]):
             wm.harhtools_live_reload_status = message
             wm.harhtools_live_reload_version = _loaded_version
-    for wm in bpy.data.window_managers:
+    for wm in managers:
         for window in wm.windows:
             for area in window.screen.areas:
                 if area.type == 'VIEW_3D':

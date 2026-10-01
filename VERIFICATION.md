@@ -1,5 +1,27 @@
 # Release verification
 
+## Version 1.6.1
+
+- Reproduced a failure after Enter using the workshop's native Bezier guides:
+  one viewing direction produced filled area 1.98147 against preview area 11.35621.
+- The correction removes precision-scale detours between substantial curve spans
+  and uses double-precision subtraction when projecting translated coordinates.
+  Original guides remain unchanged; bounded junction adjustments are recorded.
+- Both viewing directions now produce the full 32-anchor union. Native filled
+  area differs from the preview by 0.01644%, consistent with tessellation.
+- Independent checks cover twelve separate major cells, then reuse of the
+  generated union and separate outputs as Shape Builder inputs. Coverage sampling
+  found no missing lobe, and source controls/transforms remained unchanged.
+- A native-fill validation guard runs before guide cutting or selection changes.
+  An injected second-result fill failure rolls back all outputs and preserves the
+  original selection. The user scene was read in background Blender, never saved.
+- Actual `addon_utils.enable()` testing now covers Blender's restricted startup
+  context. Window/status access waits until ordinary context is available, fixing
+  the `_RestrictData` error that plain `register()` tests did not expose.
+- The helper recovery test reproduces failed Preferences enable with stale child
+  modules, installs corrected source in the isolated fixture, and recovers the
+  extension in that same process while preserving unsaved geometry.
+
 ## Version 1.6.0
 
 Validated with Blender 5.2 on Windows in isolated background processes.

@@ -12,6 +12,7 @@ TESTS = (
     'test_modal_gesture_regression.py',
     'test_pen_curves.py',
     'test_pen_contacts.py',
+    'test_builder_curve_output.py',
     'test_mocked_gpu_caches.py',
     'test_outline_geometry.py',
     'test_outline_snap.py',

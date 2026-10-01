@@ -84,6 +84,26 @@ try:
             assert set(bpy.data.curves.keys())==before_curves
             assert len(cut_calls)==1,'Failed construction should not cut guides'
             checks['failed_batch_discards_all_outputs_before_cutting_guides']=True
+
+            calls=[];selection_before=set(bpy.context.selected_objects)
+            active_before=bpy.context.view_layer.objects.active
+            def broken_second_fill(*args,**kwargs):
+                data=original_geometry(*args,**kwargs);calls.append(1)
+                if len(calls)==2:data.dimensions='3D'  # Valid path, no filled surface.
+                return data
+            sb.curve_geometry.curve_data=broken_second_fill
+            try:
+                try:sb.commit_fill_groups(bpy.context,arrangement,[{0},{1}],output_type='CURVE',cut_guides=True)
+                except RuntimeError as error:assert 'consistently with the preview' in str(error)
+                else:raise AssertionError('Missing native fill must abort the batch')
+            finally:
+                sb.curve_geometry.curve_data=original_geometry
+            assert set(bpy.data.objects.keys())==before_objects
+            assert set(bpy.data.curves.keys())==before_curves
+            assert set(bpy.context.selected_objects)==selection_before
+            assert bpy.context.view_layer.objects.active==active_before
+            assert len(cut_calls)==1,'Bad native fill must not cut source guides'
+            checks['native_fill_mismatch_rolls_back_entire_batch_without_selection_or_guide_changes']=True
         finally:
             sb.cut_original_guides=original_cut
     finally:

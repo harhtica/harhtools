@@ -1,11 +1,11 @@
-# harhtools 1.6.0
+# harhtools 1.6.1
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.6.0.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.6.1.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -58,11 +58,18 @@ Drag either box's grip to reorder Shape Builder and Shape Library.
 Fills appear immediately. Region boundaries, screen outlines and feedback buffers
 are cached until their inputs change; navigation refreshes screen projections.
 The visual drag trail is bounded without dropping the regions crossed by the stroke.
+On confirmation, the tool checks Blender's actual curve fill against the preview.
+A missing or substantially different fill cancels the entire commit before guide
+cutting or selection changes, so it cannot silently leave a broken result.
 
 ### Curve behavior and limits
 
 Preview and hit testing use sampled paths, while saved Bezier spans come from the original
-control polygons. Mesh wires remain straight pen segments; workshop circle meshes carrying
+control polygons. At nearly coincident joins, numerical detours smaller than the source's
+coordinate precision are welded between substantial spans; endpoint and adjacent handle
+adjustments are bounded and recorded on the output data. Original source curves are unchanged,
+and complete tiny regions are kept. This prevents missing native fills after confirmation.
+Mesh wires remain straight pen segments; workshop circle meshes carrying
 `harh_circle` metadata can instead be reconstructed as cubic circular arcs. Standard cubic
 Bezier circles approximate circles; they are not mathematically exact rational circles.
 Use native Bezier guides when you want a small, editable set of pen handles.
@@ -119,6 +126,10 @@ An already running older version needs one initial activation. Open the reposito
 1.6.0, or restart Blender once. The helper targets only the enabled Harhtools extension.
 It does not save or revert the blend file or reload other add-ons. Older Blender versions
 without the active-modal inspection API safely request a restart instead.
+The updated helper also recovers the 1.6.0 Preferences enable failure: it finds one
+installed Harhtools copy, discards that package's stale modules, and enables the
+corrected code. Finish active tools and enter Object Mode before recovery. Open
+the updated helper from disk if an older copy is already in your Text Editor.
 
 ## Transform / Align
 

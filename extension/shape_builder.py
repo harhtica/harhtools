@@ -434,6 +434,26 @@ def cut_original_guides(context, expected=None):
     return intersection_cuts.run(push_undo=False)
 
 
+def validate_curve_fill(context, obj, arrangement, selected):
+    """Check Blender's actual 2D tessellation, not just the outline path.
+
+    Extremely short Bezier spans can confuse the native curve filler even when
+    the visible boundary is closed. Fail transactionally before touching guides.
+    Preview chords and Blender's cubic tessellation differ slightly in area.
+    """
+    expected = sum(arrangement['regions'][rid]['area'] for rid in selected)
+    evaluated = obj.evaluated_get(context.evaluated_depsgraph_get())
+    mesh = evaluated.to_mesh()
+    try:
+        actual = sum(polygon.area for polygon in mesh.polygons) if mesh else 0.0
+    finally:
+        evaluated.to_mesh_clear()
+    tolerance = max(expected * .005, arrangement['scale'] ** 2 * 2e-8, 1e-12)
+    if not math.isfinite(actual) or (expected > 0 and actual <= 0) or abs(actual - expected) > tolerance:
+        raise RuntimeError('Blender could not fill this curve consistently with the preview. '
+                           'No result was created and the original guides remain unchanged.')
+
+
 def commit_fill_groups(context, arrangement, groups, *, cut_guides=False, guide_snapshot=None, output_type='CURVE', edge_runs=None):
     """Build independent fills transactionally; never capture library presets."""
     groups=fill_groups.copy_groups(groups)
@@ -453,6 +473,10 @@ def commit_fill_groups(context, arrangement, groups, *, cut_guides=False, guide_
         for data in data_blocks:
             obj=bpy.data.objects.new('Shape Builder',data);objects.append(obj)
             obj.matrix_world=matrix;collection.objects.link(obj)
+        if output_type=='CURVE' and edge_runs is None:
+            context.view_layer.update()
+            for obj,group in zip(objects,groups):
+                validate_curve_fill(context,obj,arrangement,group)
         # Run once with the ORIGINAL guide selection, never on a preceding result.
         if cut_guides:cut_original_guides(context,guide_snapshot)
         if context.mode in {'EDIT_MESH','EDIT_CURVE'}:bpy.ops.object.mode_set(mode='OBJECT')
