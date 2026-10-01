@@ -10,6 +10,47 @@ from bpy.props import FloatProperty,IntProperty,BoolProperty,PointerProperty,Enu
 from . import shortcuts
 
 STATE='harhtools_arc_preview'
+_retired=[]
+
+
+def cleanup_retired():
+    """Free only scratch data; never restore geometry from a retired operator."""
+    while _retired:
+        state=_retired.pop()
+        try:record=object.__getattribute__(state,'__dict__')
+        except (AttributeError,ReferenceError,RuntimeError,TypeError):continue
+        record['_done']=True
+        timer=record.pop('_timer',None)
+        if timer is not None:
+            try:record['_wm'].event_timer_remove(timer)
+            except (KeyError,AttributeError,ReferenceError,RuntimeError,ValueError,TypeError):pass
+        snapshot=record.pop('_snapshot',None)
+        if snapshot is not None:
+            try:
+                if snapshot.users==0:bpy.data.meshes.remove(snapshot)
+            except (ReferenceError,RuntimeError):pass
+        area=record.get('_area')
+        if area is not None:
+            try:area.tag_redraw()
+            except (ReferenceError,RuntimeError):pass
+
+
+def retire(state):
+    if bpy.app.driver_namespace.get(STATE) is state:bpy.app.driver_namespace.pop(STATE,None)
+    if not any(item is state for item in _retired):_retired.append(state)
+    # The sidebar can discover an expired RNA wrapper while drawing. ID removal
+    # must wait for a timer, outside Blender's read-only panel callback.
+    if not bpy.app.timers.is_registered(cleanup_retired):bpy.app.timers.register(cleanup_retired,first_interval=0)
+
+
+def preview_state():
+    state=bpy.app.driver_namespace.get(STATE)
+    if state is None:return None
+    try:
+        if not state._done and isinstance(state._info,dict):return state
+    except (AttributeError,ReferenceError,RuntimeError):pass
+    retire(state)
+    return None
 
 
 def selection(obj):
@@ -318,7 +359,7 @@ def write(obj,snapshot,info,coords,closed):
 
 
 def changed(cfg,context):
-    state=bpy.app.driver_namespace.get(STATE)
+    state=preview_state()
     if state and not getattr(state,'_syncing',False):
         if any(not item['closed'] for item in sections(state._info)) and cfg.amount>math.radians(359)+1e-6:
             cfg.amount=math.radians(359)
@@ -341,6 +382,7 @@ class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
     bl_idname='mesh.harhtools_edit_arc';bl_label='Adjust Selected Arc';bl_options={'REGISTER','UNDO'}
     @classmethod
     def poll(cls,context):
+        preview_state()
         return context.mode=='EDIT_MESH' and not any(bpy.app.driver_namespace.get(k) for k in
             (STATE,'arch_tools_shape_builder','harhtools_outline_preview','harhtools_array_preview'))
     def invoke(self,context,event):
@@ -418,6 +460,15 @@ class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
         except Exception as exc:self._error=str(exc)
         self._area.tag_redraw()
     def modal(self,context,event):
+        try:return self.modal_event(context,event)
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            try:self.finish(cancel=True)
+            finally:retire(self)
+            self.report({'ERROR'},'Arc editing stopped: '+str(exc))
+            return {'CANCELLED'}
+    def modal_event(self,context,event):
         if self._done:return {'CANCELLED'}
         if context.mode!='EDIT_MESH' or context.active_object!=self._obj:
             self.finish();return {'FINISHED'}
@@ -441,23 +492,33 @@ class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
     def finish(self,cancel=False):
         if self._done:return
         self._done=True
-        if self._timer:self._wm.event_timer_remove(self._timer);self._timer=None
-        if self._snapshot:
-            if cancel and self._valid and self._expected is not None and signature(self._obj)==self._expected:
-                write(self._obj,self._snapshot,self._info,None,None)
-            elif cancel:self.report({'INFO'},'Kept your latest mesh edits.')
-            bpy.data.meshes.remove(self._snapshot);self._snapshot=None
-        if bpy.app.driver_namespace.get(STATE) is self:bpy.app.driver_namespace.pop(STATE,None)
-        if self._area:self._area.tag_redraw()
+        try:
+            if self._snapshot and cancel:
+                if self._valid and self._expected is not None and signature(self._obj)==self._expected:
+                    write(self._obj,self._snapshot,self._info,None,None)
+                else:self.report({'INFO'},'Kept your latest mesh edits.')
+        finally:
+            retire(self)
+            cleanup_retired()
+    def cancel(self,context):
+        self.finish(cancel=True)
 
 
 def cancel(*args):
-    state=bpy.app.driver_namespace.get(STATE)
+    state=preview_state()
     if state:state.finish(cancel=True)
+
+
+def history_pre(*args):
+    # Blender owns the Undo/Redo restore. Stop observing before its BMesh and
+    # operator RNA are replaced; do not write an old arc snapshot over history.
+    state=preview_state()
+    if state:state.finish()
+    cleanup_retired()
 
 def draw_panel(layout,context):
     if context.mode!='EDIT_MESH':return
-    box=layout.box();box.label(text='Selected Arc');state=bpy.app.driver_namespace.get(STATE)
+    box=layout.box();box.label(text='Selected Arc');state=preview_state()
     cfg=context.window_manager.harhtools_edit_arc
     box.prop(cfg,'plane')
     if state:
@@ -485,9 +546,15 @@ def register():
     for cls in CLASSES:bpy.utils.register_class(cls)
     bpy.types.WindowManager.harhtools_edit_arc=PointerProperty(type=HARHTOOLS_PG_edit_arc)
     bpy.app.handlers.load_pre.append(cancel)
+    bpy.app.handlers.undo_pre.append(history_pre)
+    bpy.app.handlers.redo_pre.append(history_pre)
 def unregister():
     cancel()
+    cleanup_retired()
+    if bpy.app.timers.is_registered(cleanup_retired):bpy.app.timers.unregister(cleanup_retired)
     if cancel in bpy.app.handlers.load_pre:bpy.app.handlers.load_pre.remove(cancel)
+    for handlers in (bpy.app.handlers.undo_pre,bpy.app.handlers.redo_pre):
+        if history_pre in handlers:handlers.remove(history_pre)
     if hasattr(bpy.types.WindowManager,'harhtools_edit_arc'):del bpy.types.WindowManager.harhtools_edit_arc
     for cls in reversed(CLASSES):
         if hasattr(cls,'bl_rna'):

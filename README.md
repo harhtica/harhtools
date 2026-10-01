@@ -4,7 +4,16 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.12.2
+## Version 1.12.3
+
+- Fixes the Selected Arc sidebar disappearing after Undo or an interrupted tool.
+  Expired Blender operator references are released, and the start button returns.
+- Undo/Redo stop arc tracking before Blender replaces the mesh. Native cancel
+  and modal errors clean up timers and scratch meshes instead of locking tools.
+- The reload helper can repair an already-stuck older session without reopening
+  or saving the blend file. A live arc interaction is still allowed to finish.
+
+## Included from 1.12.2
 
 - **Selected Arc** accepts open edge sections on filled meshes. In Edge Select
   mode, select one or more end caps; each rounds separately with fixed corners.
@@ -111,7 +120,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.12.2](https://harhtica.github.io/harhtools/harhtools-1.12.2.zip), or use
+[Download 1.12.3](https://harhtica.github.io/harhtools/harhtools-1.12.3.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

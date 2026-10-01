@@ -138,6 +138,7 @@ def main():
     package = _enabled_harhtools()
     if package is None:
         return _recover_disabled()
+    _recover_expired_arc(package)
     watcher_name = package.__name__ + '.live_reload'
     watcher = sys.modules.get(watcher_name)
     running = watcher is not None and bpy.app.timers.is_registered(watcher._poll)
@@ -153,6 +154,29 @@ def main():
     watcher.request_reload()
     print('Harhtools reload queued. Finish active tools and use Object Mode; your current file stays open.')
     return watcher
+
+
+def _recover_expired_arc(package):
+    """An old watcher cannot reload while an expired arc wrapper holds its lock."""
+    state = bpy.app.driver_namespace.get('harhtools_arc_preview')
+    if state is None:
+        return
+    try:
+        if not state._done:
+            return  # A genuine active interaction must finish normally.
+    except (AttributeError, ReferenceError, RuntimeError):
+        pass
+    path = Path(package.__file__).resolve().parent / 'edit_arc.py'
+    spec = importlib.util.spec_from_file_location(package.__name__ + '._arc_recovery', path)
+    recovery = importlib.util.module_from_spec(spec)
+    exec(compile(path.read_bytes(), str(path), 'exec'), recovery.__dict__)
+    if not hasattr(recovery, 'preview_state'):
+        raise RuntimeError('Install Harhtools 1.12.3 or later before recovering expired arc controls.')
+    recovery.preview_state()
+    recovery.cleanup_retired()
+    if bpy.app.timers.is_registered(recovery.cleanup_retired):
+        bpy.app.timers.unregister(recovery.cleanup_retired)
+    print('Harhtools: cleared expired arc controls; mesh geometry kept unchanged.')
 
 
 if __name__ == '__main__':

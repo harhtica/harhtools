@@ -20,6 +20,7 @@ OUTPUT = Path(__file__).resolve().parent / '_artifacts'
 OUTPUT.mkdir(exist_ok=True)
 parser = argparse.ArgumentParser()
 parser.add_argument('--old-source', type=Path)
+parser.add_argument('--stale-arc', action='store_true')
 args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
 TEMP = Path(tempfile.mkdtemp(prefix='real_reload_', dir=OUTPUT))
 PACKAGE = TEMP / 'real_reload_fixture'
@@ -101,12 +102,32 @@ def assert_scene_settings():
 try:
     if args.old_source:
         watcher=getattr(package,'live_reload',None)
+        if args.stale_arc:
+            class WM_OT_arc_expired_fixture(bpy.types.Operator):
+                bl_idname='wm.arc_expired_fixture';bl_label='Expired arc fixture'
+                def execute(self,context):
+                    self._done=False;self._wm=context.window_manager
+                    self._snapshot=bpy.data.meshes.new('Harhtools arc undo snapshot')
+                    self._timer=self._wm.event_timer_add(.1,window=context.window)
+                    bpy.app.driver_namespace['harhtools_arc_preview']=self
+                    return {'FINISHED'}
+            bpy.utils.register_class(WM_OT_arc_expired_fixture)
+            bpy.ops.wm.arc_expired_fixture()
+            expired=bpy.app.driver_namespace['harhtools_arc_preview']
+            try:expired._done
+            except ReferenceError:pass
+            else:raise AssertionError('Expected real expired RNA')
         copy_isolated(ROOT / 'extension')
-        if watcher is None:
+        if watcher is None or args.stale_arc:
             spec = importlib.util.spec_from_file_location('reload_helper_integration', ROOT / 'tools/reload_harhtools.py')
             helper = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(helper)
             watcher = helper.main()
+        if args.stale_arc:
+            assert not bpy.app.driver_namespace.get('harhtools_arc_preview')
+            assert not any(m.name.startswith('Harhtools arc undo snapshot') for m in bpy.data.meshes)
+            bpy.utils.unregister_class(WM_OT_arc_expired_fixture)
+            print('PASS: recovery helper clears real expired RNA from the old release without changing scene data')
         assert reload_ready(watcher) is None
         package = sys.modules['real_reload_fixture']
         assert hasattr(package, 'outline_tool')

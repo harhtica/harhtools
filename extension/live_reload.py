@@ -70,6 +70,9 @@ def request_reload():
 
 def _busy_reason(context=None):
     context = context or bpy.context
+    arc = sys.modules.get(_ROOT_NAME + '.edit_arc')
+    if arc is not None and hasattr(arc, 'preview_state'):
+        arc.preview_state()  # Expired operator RNA must not block reload forever.
     if getattr(context, 'mode', 'OBJECT') != 'OBJECT':
         return 'finish Edit/Sculpt mode'
     wm = getattr(context, 'window_manager', None)

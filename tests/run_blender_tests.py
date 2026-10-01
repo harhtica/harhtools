@@ -20,6 +20,7 @@ TESTS = (
     'test_circle_arc.py',
     'test_edit_arc.py',
     'test_edit_arc_edges.py',
+    'test_edit_arc_lifecycle.py',
     'test_edit_arc_live.py',
     'test_edit_arc_plane.py',
     'test_mocked_gpu_caches.py',

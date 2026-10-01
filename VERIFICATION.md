@@ -1,5 +1,23 @@
 # Release verification
 
+## Version 1.12.3
+
+- Eight relevant Blender 5.2 suites passed: real arc operator lifecycle,
+  selected edges, existing arcs, live edits, arc planes, watcher behavior,
+  reload bootstrap and previous-release integration with a stale operator.
+- A real registered Blender operator is deliberately retired while its Python
+  wrapper remains referenced. Before the fix, accessing its arc state raises
+  `ReferenceError: StructRNA ... has been removed`, matching the truncated panel.
+  The corrected draw returns the start button without deleting ID data during
+  drawing. Deferred cleanup removes private timers and unused snapshot meshes.
+- Undo/Redo handlers, native cancellation and injected modal errors clear state.
+  Starting controls, manual arc edits and face-edge subdivision still pass their
+  geometry regressions. The installed-source helper clears an expired wrapper
+  from 1.12.2 and reloads while preserving unsaved objects and settings.
+- Tests use background Blender, real RNA and simulated panel/input calls. The
+  affected desktop instance was not remotely controlled; no user blend was saved
+  or reverted. The available local API belonged to a different open blend.
+
 ## Version 1.12.2
 
 - Six relevant Blender 5.2 suites passed: selected face edges, existing arc

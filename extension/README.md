@@ -1,11 +1,11 @@
-# harhtools 1.12.2
+# harhtools 1.12.3
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.12.2.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.12.3.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -53,6 +53,10 @@ controls still open. They refresh after a native transform ends; an invalid
 selection pauses them until a continuous section is selected again. Starting
 the tool leaves the mesh unchanged until a control is adjusted. Unselected
 joining vertices remain unselected when a wire section is resampled.
+
+Undo or Redo ends the active arc session before Blender restores history. Click
+**Adjust Selected Arc** again to continue with the resulting selection. Expired
+arc controls recover automatically instead of hiding the remainder of the sidebar.
 
 ## Readable distances
 
