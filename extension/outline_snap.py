@@ -1,6 +1,7 @@
 """Cached, plane-aware geometry snapping for a uniform outline thickness.
 
-The scene is inspected only by ``rebuild_targets`` (also called at construction).
+The scene is inspected only by ``rebuild_targets`` (called at construction by
+default, or on the first query with ``lazy_targets=True``).
 ``query`` searches a cached screen-space index and returns one positive distance
 to the ORIGINAL source boundary. It never scales or edits any scene geometry.
 Source and target Beziers use their actual control polygons, not evaluated fills.
@@ -16,6 +17,14 @@ def _dot(a, b):
 
 def _distance2(a, b):
     return math.fsum((x-y)**2 for x, y in zip(a, b))
+
+
+def _bounds_distance2(point, bounds):
+    x, y = point
+    (xmin, xmax), (ymin, ymax) = bounds
+    dx = xmin-x if x < xmin else x-xmax if x > xmax else 0.0
+    dy = ymin-y if y < ymin else y-ymax if y > ymax else 0.0
+    return dx*dx+dy*dy
 
 
 def _point(cp, t):
@@ -145,10 +154,13 @@ class OutlineSnapCache:
     Optional ``owner`` metadata lets query's source_filter limit eligible sources.
     ``exact_source_cubics`` is an alternative complete boundary of cubic controls.
     The caller decides INSET/OUTSET; returned thickness is always unsigned.
+    ``lazy_targets`` permits source measurement without scanning the scene until
+    geometry snapping is actually queried.
     """
     def __init__(self, context, source_origin, source_normal, source_scale,
                  source_boundary, excluded_objects=(), pixel_tolerance=12.0,
-                 exact_source_cubics=None, source_segments=None, plane_epsilon=None):
+                 exact_source_cubics=None, source_segments=None, plane_epsilon=None,
+                 lazy_targets=False):
         self.context = context
         self.origin = tuple(float(v) for v in source_origin)
         normal = Vector(source_normal)
@@ -186,12 +198,17 @@ class OutlineSnapCache:
                     self._add_source((a, b))
         if not self._source:
             raise ValueError('Outline snapping needs an original source boundary.')
-        self.stats = {'target_rebuilds': 0, 'projection_rebuilds': 0, 'queries': 0}
+        self._source_tree = self._build_source_tree(list(range(len(self._source))))
+        self.stats = {'target_rebuilds': 0, 'projection_rebuilds': 0, 'queries': 0,
+                      'source_searches': 0, 'source_nodes_tested': 0, 'source_segments_tested': 0}
         self._targets = []
         self._screen_key = None
         self._grid = {}
         self._projected_samples = []
-        self.rebuild_targets(context)
+        self._screen_lines = []
+        self._targets_ready = False
+        if not lazy_targets:
+            self.rebuild_targets(context)
 
     def _to_plane(self, point):
         delta = tuple(float(p)-o for p, o in zip(point, self.origin))
@@ -215,6 +232,20 @@ class OutlineSnapCache:
         self._source_bounds.append(tuple((min(p[i] for p in planar), max(p[i] for p in planar)) for i in range(2)))
         self._source_owners.append(owner)
 
+    def _build_source_tree(self, indices):
+        """Control-hull bounds are conservative for both lines and true cubics."""
+        bounds = tuple((min(self._source_bounds[i][axis][0] for i in indices),
+                        max(self._source_bounds[i][axis][1] for i in indices))
+                       for axis in range(2))
+        owners = frozenset(self._source_owners[i] for i in indices)
+        if len(indices) <= 8:
+            return bounds, owners, tuple(indices), None, None
+        axis = max(range(2), key=lambda a: bounds[a][1]-bounds[a][0])
+        indices.sort(key=lambda i: sum(self._source_bounds[i][axis]))
+        middle = len(indices)//2
+        return (bounds, owners, (), self._build_source_tree(indices[:middle]),
+                self._build_source_tree(indices[middle:]))
+
     def _add_target(self, name, cp):
         if any(not math.isfinite(float(value)) for p in cp for value in p):
             return
@@ -222,7 +253,10 @@ class OutlineSnapCache:
             self.stats['off_plane_segments'] += 1
             return
         planar = tuple(self._to_plane(p) for p in cp)
-        if len(cp) == 2 and _distance2(*planar) <= 1e-24:
+        self._add_planar_target(name, planar)
+
+    def _add_planar_target(self, name, planar):
+        if len(planar) == 2 and _distance2(*planar) <= 1e-24:
             return
         self._targets.append({'object_name': name, 'cp': planar})
 
@@ -260,6 +294,7 @@ class OutlineSnapCache:
         self._object_states = {}
         self._view_layer = context.view_layer
         self._screen_key = None
+        self._targets_ready = False
         self.stats['target_rebuilds'] += 1
         self.stats.update(objects_scanned=0, objects_used=0, off_plane_segments=0, unsupported_splines=0)
         allowed = _selectable_paths(context)
@@ -276,14 +311,31 @@ class OutlineSnapCache:
             if obj.type == 'MESH':
                 mesh = evaluated.to_mesh()
                 try:
+                    projected_vertices = {}
                     for edge in mesh.edges:
                         if getattr(edge, 'hide', False):
                             continue
                         a, b = (mesh.vertices[i] for i in edge.vertices)
                         if getattr(a, 'hide', False) or getattr(b, 'hide', False):
                             continue
+                        for vertex in (a, b):
+                            if vertex.index not in projected_vertices:
+                                world = tuple(matrix @ vertex.co)
+                                if not all(math.isfinite(value) for value in world):
+                                    projected_vertices[vertex.index] = (None, 2)
+                                elif self._plane_error(world) > self.plane_epsilon:
+                                    projected_vertices[vertex.index] = (None, 1)
+                                else:
+                                    projected_vertices[vertex.index] = (self._to_plane(world), 0)
+                        pa, sa = projected_vertices[a.index]
+                        pb, sb = projected_vertices[b.index]
+                        if sa == 2 or sb == 2:
+                            continue
+                        if sa == 1 or sb == 1:
+                            self.stats['off_plane_segments'] += 1
+                            continue
                         previous = len(self._targets)
-                        self._add_target(obj.name, (matrix @ a.co, matrix @ b.co))
+                        self._add_planar_target(obj.name, (pa, pb))
                         if len(self._targets) > previous and not obj.modifiers:
                             self._targets[-1]['mesh_sample'] = (edge.index,
                                 tuple((int(i), tuple(obj.data.vertices[i].co)) for i in edge.vertices))
@@ -318,11 +370,12 @@ class OutlineSnapCache:
             if len(self._targets) > before:
                 self._object_states[obj.name] = obj, self._object_signature(obj), allowed[obj.as_pointer()]
         self.stats['target_segments'] = len(self._targets)
+        self._targets_ready = True
         return self
 
     def _clip(self, point):
-        world = self._world(point)
-        return tuple(_dot(row, (*world, 1.0)) for row in self._matrix)
+        x, y = point
+        return tuple(a*x+b*y+c for a, b, c in self._plane_clip)
 
     def _project(self, point):
         x, y, _, w = self._clip(point)
@@ -358,18 +411,33 @@ class OutlineSnapCache:
             return
         self._screen_key = key
         self._matrix = matrix
+        # All targets lie in the fixed source plane. Compose its world basis
+        # with the view matrix once, instead of expanding every point to XYZ.
+        self._plane_clip = tuple((_dot(row[:3], self.u), _dot(row[:3], self.v),
+                                  _dot(row[:3], self.origin)+row[3]) for row in matrix)
         self._width, self._height = float(region.width), float(region.height)
         self._radius = self.pixel_tolerance*ui_scale
         self._tile = max(16.0, self._radius*2)
         self._grid = defaultdict(set)
         self._projected_samples = []
+        self._screen_lines = []
         self.stats['projection_rebuilds'] += 1
         padding = self._radius+.5
         for index, target in enumerate(self._targets):
-            if all(self._clip(p)[3] <= 1e-10 for p in target['cp']):
+            clips = [self._clip(p) for p in target['cp']]
+            if all(p[3] <= 1e-10 for p in clips):
                 self._projected_samples.append([])
+                self._screen_lines.append(None)
                 continue
-            samples = self._samples(target['cp'])
+            if len(clips) == 2 and all(p[3] > 1e-10 for p in clips):
+                a, b = [(self._width*.5*(1+p[0]/p[3]), self._height*.5*(1+p[1]/p[3]))
+                        for p in clips]
+                dx, dy = b[0]-a[0], b[1]-a[1]
+                self._screen_lines.append((*a, dx, dy, dx*dx+dy*dy, clips[0][3], clips[1][3]))
+                samples = [(0.0, a), (1.0, b)]
+            else:
+                self._screen_lines.append(None)
+                samples = self._samples(target['cp'])
             self._projected_samples.append(samples)
             for (_, a), (_, b) in zip(samples, samples[1:]):
                 if a is None or b is None:
@@ -386,6 +454,15 @@ class OutlineSnapCache:
         # In perspective view each projected cubic is rational. Solve the full
         # rational distance derivative rather than snapping to sampled chords.
         clips = [self._clip(p) for p in cp]
+        if len(cp) == 2 and all(p[3] > 1e-10 for p in clips):
+            # Perspective maps a straight segment to a straight screen segment.
+            # Convert the closest screen fraction back through homogeneous w.
+            projected = [(self._width*.5*(1+p[0]/p[3]),
+                          self._height*.5*(1+p[1]/p[3])) for p in clips]
+            screen, fraction, distance = nearest_on_segment(mouse, *projected)
+            w0, w1 = clips[0][3], clips[1][3]
+            t = fraction*w0/(w1*(1-fraction)+fraction*w0)
+            return distance, _point(cp, t), screen, t
         x, y, w = [_power([p[i] for p in clips]) for i in (0, 1, 3)]
         a = _poly_add([value*self._width*.5 for value in x], w, self._width*.5-mouse[0])
         b = _poly_add([value*self._height*.5 for value in y], w, self._height*.5-mouse[1])
@@ -412,19 +489,35 @@ class OutlineSnapCache:
         """
         point = self._to_plane(world_point)
         best = None
-        lower_bounds = []
-        for i, bounds in enumerate(self._source_bounds):
-            if allowed_owners is not None and self._source_owners[i] not in allowed_owners:
-                continue
-            lower = sum(max(low-value, value-high, 0.0)**2 for value, (low, high) in zip(point, bounds))
-            lower_bounds.append((lower, i))
-        for lower, index in sorted(lower_bounds):
+        self.stats['source_searches'] += 1
+        if allowed_owners is not None and not allowed_owners:
+            return None
+        stack = [(0.0, self._source_tree)]
+        while stack:
+            lower, node = stack.pop()
             if best is not None and lower > best[2]:
-                break
-            cp = self._source[index]
-            result = nearest_on_segment(point, *cp) if len(cp) == 2 else nearest_on_cubic(point, cp)
-            if best is None or result[2] < best[2]:
-                best = result
+                continue
+            bounds, owners, indices, left, right = node
+            self.stats['source_nodes_tested'] += 1
+            if allowed_owners is not None and owners.isdisjoint(allowed_owners):
+                continue
+            if indices:
+                for index in indices:
+                    if allowed_owners is not None and self._source_owners[index] not in allowed_owners:
+                        continue
+                    lower = _bounds_distance2(point, self._source_bounds[index])
+                    if best is not None and lower > best[2]:
+                        continue
+                    cp = self._source[index]
+                    self.stats['source_segments_tested'] += 1
+                    result = nearest_on_segment(point, *cp) if len(cp) == 2 else nearest_on_cubic(point, cp)
+                    if best is None or result[2] < best[2]:
+                        best = result
+            else:
+                a, b = _bounds_distance2(point, left[0]), _bounds_distance2(point, right[0])
+                # Visit the nearer subtree first so it bounds the farther one.
+                if a < b:stack.extend(((b, right), (a, left)))
+                else:stack.extend(((a, left), (b, right)))
         return (math.sqrt(max(0.0, best[2])), Vector(self._world(best[0]))) if best is not None else None
 
     def query(self, mouse_xy, region, rv3d, source_filter=None):
@@ -440,6 +533,8 @@ class OutlineSnapCache:
         mouse = tuple(float(v) for v in mouse_xy[:2])
         if not (0 <= mouse[0] <= region.width and 0 <= mouse[1] <= region.height):
             return None
+        if not self._targets_ready:
+            self.rebuild_targets()
         self._prepare_screen(region, rv3d)
         p, u, v = [self._project(point) for point in ((0, 0), (self.scale, 0), (0, self.scale))]
         if p is None or u is None or v is None:
@@ -452,6 +547,29 @@ class OutlineSnapCache:
         live = {}
         for index in sorted(self._grid.get(tile, ())):
             target = self._targets[index]
+            screen_line = self._screen_lines[index]
+            if screen_line is not None:
+                ax, ay, dx, dy, denominator, w0, w1 = screen_line
+                fraction = min(1.0, max(0.0, ((mouse[0]-ax)*dx+(mouse[1]-ay)*dy)/denominator)) if denominator else 0.0
+                screen = ax+fraction*dx, ay+fraction*dy
+                distance = (mouse[0]-screen[0])**2+(mouse[1]-screen[1])**2
+                if distance > self._radius**2 or (best is not None and distance >= best['pixel_distance']**2-1e-10):
+                    continue
+                t = fraction*w0/(w1*(1-fraction)+fraction*w0)
+                hit = distance, _point(target['cp'], t), screen, t
+            else:
+                # Coarse sampled search gates exact rational-cubic refinement.
+                samples = self._projected_samples[index]
+                coarse = min((nearest_on_segment(mouse, a, b)[2]
+                              for (_, a), (_, b) in zip(samples, samples[1:])
+                              if a is not None and b is not None), default=math.inf)
+                if coarse > (self._radius+.5)**2:
+                    continue
+                hit = self._nearest_screen(mouse, target['cp'])
+                if hit is None or hit[0] > self._radius**2:
+                    continue
+                if best is not None and hit[0] >= best['pixel_distance']**2-1e-10:
+                    continue
             name = target['object_name']
             if name not in live:
                 live[name] = self._target_is_live(name)
@@ -465,16 +583,6 @@ class OutlineSnapCache:
                         or any(getattr(obj.data.vertices[i], 'hide', False)
                                or tuple(obj.data.vertices[i].co) != cp for i, cp in vertices)):
                     continue
-            # Coarse sampled search gates exact rational-cubic refinement.
-            samples = self._projected_samples[index]
-            coarse = min((nearest_on_segment(mouse, a, b)[2]
-                          for (_, a), (_, b) in zip(samples, samples[1:])
-                          if a is not None and b is not None), default=math.inf)
-            if coarse > (self._radius+.5)**2:
-                continue
-            hit = self._nearest_screen(mouse, target['cp'])
-            if hit is None or hit[0] > self._radius**2:
-                continue
             world = self._world(hit[1])
             allowed = source_filter(Vector(world)) if source_filter is not None else None
             source_hit = self.nearest_source(world, allowed)

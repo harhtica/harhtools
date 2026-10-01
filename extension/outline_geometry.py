@@ -1,9 +1,10 @@
 """Non-destructive, world-space planar borders with validated offsets.
 
 Original Bezier boundaries are adaptively sampled with a control-hull chord
-error bound. Result curves are explicitly POLY splines, not claimed exact cubic
-offsets. Round joins avoid outward miter spikes. Topological collapse, boundary
-crossings, and insufficient clearance raise ValueError before any data is made.
+error bound; dense polylines use the same bounded chord simplification. Result
+curves are explicitly POLY splines, not claimed exact cubic offsets. Round joins
+avoid outward miter spikes. Concave offset overlaps are classified by actual
+source-boundary distance. Invalid collapse raises before any data is made.
 """
 import math
 from collections import defaultdict
@@ -51,6 +52,37 @@ def _candidates(rows,margin=0.0):
             yield old,current
         active.append(current)
 
+class _SegmentIndex:
+    """Small 2D AABB tree for exact segment-distance threshold queries."""
+    def __init__(self,loops):
+        rows=_edges(loops)
+        def build(items):
+            bounds=(min(row[0] for row in items),max(row[1] for row in items),
+                    min(row[2] for row in items),max(row[3] for row in items))
+            if len(items)<=8:return bounds,items,None,None
+            axis=0 if bounds[1]-bounds[0]>=bounds[3]-bounds[2] else 2
+            items.sort(key=lambda row:row[axis]+row[axis+1]);mid=len(items)//2
+            return bounds,None,build(items[:mid]),build(items[mid:])
+        self.root=build(rows)
+
+    def within(self,a,b,distance):
+        limit=distance*distance;query=(min(a[0],b[0]),max(a[0],b[0]),min(a[1],b[1]),max(a[1],b[1]))
+        def lower(bounds):
+            dx=max(0,bounds[0]-query[1],query[0]-bounds[1])
+            dy=max(0,bounds[2]-query[3],query[2]-bounds[3])
+            return dx*dx+dy*dy
+        stack=[self.root]
+        while stack:
+            bounds,items,left,right=stack.pop()
+            if lower(bounds)>=limit:continue
+            if items is not None:
+                for row in items:
+                    if lower(row)<limit and _segment_distance_sq(a,b,row[7],row[8])<limit:return True
+            else:
+                first,second=(left,right) if lower(left[0])<lower(right[0]) else (right,left)
+                stack.append(second);stack.append(first)
+        return False
+
 def _validate_simple(loops,epsilon,message):
     for a,b in _candidates(_edges(loops),epsilon):
         if a[5]==b[5] and (abs(a[6]-b[6]) in (0,1,a[9]-1)):continue
@@ -76,6 +108,22 @@ def _clean(loop,epsilon):
     if len(result)<3 or abs(_area(result))<=epsilon*epsilon:
         raise ValueError('The outline contains a collapsed or zero-area loop.')
     return result
+
+def _simplify_polyline_loop(loop,tolerance):
+    """Closed RDP with a finite-chord distance bound, retaining sharp cusps."""
+    if len(loop)<5:return loop
+    pivot=max(range(1,len(loop)),key=lambda i:math.dist(loop[0],loop[i]))
+    def part(points):
+        retained={0,len(points)-1};pending=[(0,len(points)-1)];limit=tolerance*tolerance
+        while pending:
+            a,b=pending.pop()
+            if b-a<2:continue
+            distance,index=max((_point_segment_sq(points[i],points[a],points[b]),i) for i in range(a+1,b))
+            if distance>limit:
+                retained.add(index);pending.extend(((a,index),(index,b)))
+        return [points[i] for i in sorted(retained)]
+    result=part(loop[:pivot+1])[:-1]+part(loop[pivot:]+loop[:1])[:-1]
+    return result if len(result)>=3 else loop
 
 def _flatten(cp,tolerance):
     """The Bezier convex hull lies within tolerance of every emitted chord."""
@@ -173,7 +221,10 @@ def prepare_sources(objects,*,tolerance=None):
                 delta=Vector(point)-origin;cp.append((delta.dot(u),delta.dot(v)))
             sampled=[cp[0],cp[3]] if segment['kind']=='LINE' else _flatten(tuple(cp),tolerance)
             loop.extend(sampled[:-1])
-        loops.append(_clean(loop,epsilon))
+        loop=_clean(loop,epsilon)
+        if all(segment['kind']=='LINE' for segment in segment_loop):
+            loop=_simplify_polyline_loop(loop,tolerance)
+        loops.append(loop)
     if sum(map(len,loops))>MAX_POINTS:raise ValueError('Outline exceeds the sampling budget. Increase sampling tolerance.')
     _validate_simple(loops,epsilon,'Source boundaries intersect or touch ambiguously. Use separate clean closed loops before making an outline.')
     depths=[]
@@ -228,13 +279,14 @@ def _winding(point,loop):
         elif b[1]<=point[1]<a[1] and side<0:result-=1
     return result
 
-def _trim_offset_overruns(loop,orientation,epsilon,max_trim_distance):
+def _trim_offset_overruns(loop,orientation,epsilon,max_trim_distance,original=None,distance=None):
     """Remove reversed local loops where dense offsets overrun a sharp apex.
 
     A pointed arch's short sampled edges can run past its correct inset apex.
-    CDT splits those intersections; only faces with the original winding sign
-    survive. Multiple surviving components/holes are a real topology change and
-    are rejected. Cleanup is deliberately local (within four border widths),
+    CDT splits those intersections; source distance classifies true inset/outset
+    membership of each bounded component. Multiple surviving components/holes
+    are a real topology change and are rejected. Cleanup is deliberately local
+    (within four border widths),
     so a vanished narrow limb cannot be silently mistaken for a corner trim.
     The caller still verifies all source-boundary clearances.
     """
@@ -246,15 +298,43 @@ def _trim_offset_overruns(loop,orientation,epsilon,max_trim_distance):
     scale=max(math.hypot(*point) for point in loop)
     points=[Vector((point[0]/scale,point[1]/scale)) for point in loop]
     edges=[(i,(i+1)%len(points)) for i in range(len(points))]
-    vertices,_,triangles,_,_,_=delaunay_2d_cdt(points,edges,[],0,epsilon/scale,False)
+    vertices,out_edges,triangles,_,original_edges,_=delaunay_2d_cdt(points,edges,[],0,epsilon/scale,True)
     xy=[(point.x*scale,point.y*scale) for point in vertices]
+    constraints={tuple(sorted(edge)) for edge,ids in zip(out_edges,original_edges) if ids}
+    triangles=[tuple(tri) if _cross(_sub(xy[tri[1]],xy[tri[0]]),_sub(xy[tri[2]],xy[tri[0]]))>0
+               else tuple(reversed(tri)) for tri in triangles if len(tri)==3]
+    parents=list(range(len(triangles)))
+    def root(index):
+        while parents[index]!=index:parents[index]=parents[parents[index]];index=parents[index]
+        return index
+    edge_faces=defaultdict(list)
+    for index,tri in enumerate(triangles):
+        for a,b in zip(tri,tri[1:]+tri[:1]):edge_faces[tuple(sorted((a,b)))].append(index)
+    for edge,faces in edge_faces.items():
+        if len(faces)==2 and edge not in constraints:
+            a,b=map(root,faces);parents[a]=b
+    components=defaultdict(list)
+    for index in range(len(triangles)):components[root(index)].append(index)
+    chosen=set();original_index=_SegmentIndex([original]) if original is not None else None
+    for component in components.values():
+        # Winding is constant within a constraint-bounded component. Probe its
+        # largest triangle, avoiding precision slivers and quadratic scans.
+        seed=max(component,key=lambda i:abs(_area([xy[j] for j in triangles[i]])))
+        a,b,c=(xy[i] for i in triangles[seed]);centroid=((a[0]+b[0]+c[0])/3,(a[1]+b[1]+c[1])/3)
+        if original_index is None:
+            keep=_winding(centroid,loop)*orientation>0
+        else:
+            inside=_contains(centroid,original)
+            # Offset line/arc constraints divide faces into constant buffer
+            # membership. Winding alone is incorrect at outward concave joins:
+            # their reversed loops can otherwise cut spurious notches into the
+            # source. Classify the actual erosion/dilation of the source loop.
+            near=original_index.within(centroid,centroid,abs(distance))
+            keep=(inside and not near) if distance*orientation>0 else (inside or near)
+        if keep:chosen.update(component)
     boundary=set()
-    for triangle in triangles:
-        if len(triangle)!=3:continue
-        a,b,c=(xy[i] for i in triangle)
-        centroid=((a[0]+b[0]+c[0])/3,(a[1]+b[1]+c[1])/3)
-        if _winding(centroid,loop)*orientation<=0:continue
-        if _cross(_sub(b,a),_sub(c,a))<0:triangle=tuple(reversed(triangle))
+    for index in chosen:
+        triangle=triangles[index]
         for a,b in zip(triangle,triangle[1:]+triangle[:1]):
             if (b,a) in boundary:boundary.remove((b,a))
             else:boundary.add((a,b))
@@ -270,8 +350,8 @@ def _trim_offset_overruns(loop,orientation,epsilon,max_trim_distance):
         if len(indices)>len(xy):raise ValueError('Unable to resolve a stable offset boundary. Reduce thickness.')
     if boundary:raise ValueError('Thickness changes the boundary topology. Reduce thickness.')
     result=_clean([xy[i] for i in indices],epsilon)
-    result_edges=list(zip(result,result[1:]+result[:1]))
-    if any(min(_point_segment_sq(point,a,b) for a,b in result_edges)>max_trim_distance**2 for point in loop):
+    index=_SegmentIndex([result])
+    if any(not index.within(point,point,max_trim_distance) for point in loop):
         raise ValueError('Thickness removes a narrow limb or requires a large sharp-tip trim. Reduce thickness or round that tip.')
     if (_area(result)>0)!=(orientation>0):result.reverse()
     return result,True
@@ -293,7 +373,7 @@ def build_outline(prepared,thickness,*,direction='INWARD'):
     offsets=[];trimmed=0
     for loop in originals:
         raw=_offset_loop(loop,distance,tolerance,epsilon)
-        cleaned,changed=_trim_offset_overruns(raw,1 if _area(loop)>0 else -1,epsilon,4*thickness)
+        cleaned,changed=_trim_offset_overruns(raw,1 if _area(loop)>0 else -1,epsilon,4*thickness,loop,distance)
         offsets.append(cleaned);trimmed+=int(changed)
     if sum(map(len,offsets))>MAX_POINTS:raise ValueError('Offset detail exceeds the sampling budget. Increase sampling tolerance.')
     _validate_simple(offsets,epsilon,'Thickness makes offset boundaries cross or touch. Reduce thickness; no source geometry was changed.')
@@ -313,9 +393,11 @@ def build_outline(prepared,thickness,*,direction='INWARD'):
     # Every offset edge must clear every source boundary, including a remote
     # concave feature. Round chord sagitta and original sampling have tolerance.
     clearance=max(0,thickness-3*tolerance)
-    for a,b in _candidates(_edges(originals,0)+_edges(offsets,1),clearance):
-        if a[4]==b[4]:continue
-        if _segment_distance_sq(a[7],a[8],b[7],b[8])<clearance*clearance:
+    source_index=prepared.get('_segment_index')
+    if source_index is None:source_index=prepared['_segment_index']=_SegmentIndex(originals)
+    for loop in offsets:
+        for a,b in zip(loop,loop[1:]+loop[:1]):
+            if not source_index.within(a,b,clearance):continue
             raise ValueError('Thickness exceeds local boundary clearance or removes a narrow tip. Reduce thickness; no source geometry was changed.')
     border=([list(loop) for loop in originals]+[list(reversed(loop)) for loop in offsets]
             if direction=='INWARD' else [list(loop) for loop in offsets]+[list(reversed(loop)) for loop in originals])

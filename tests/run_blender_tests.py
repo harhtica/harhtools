@@ -17,6 +17,7 @@ TESTS = (
     'test_outline_geometry.py',
     'test_outline_snap.py',
     'test_outline_tool.py',
+    'test_outline_interaction.py',
     'test_outline_gpu.py',
     'test_live_reload.py',
     'test_reload_bootstrap.py',

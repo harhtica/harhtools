@@ -1,5 +1,32 @@
 # Release verification
 
+## Version 1.6.2
+
+- Reproduced Make Outline rejecting the saved Gothic mesh at Outside 0.14 m.
+  Offset cleanup now classifies concave junctions against the original source
+  distance, removing inverted fragments without dropping valid lobes.
+- The saved mesh passes widths 0.12, 0.14 and 0.20 m. Portable regressions cover
+  the same construction as native curves and converted meshes, even border
+  thickness, cusp preservation, hollow Blender fill and genuine collapse rejection.
+- Segment indexes remove repeated full-boundary scans. Dense polyline cleanup
+  stays within the sampling tolerance and retains exact source segments for snapping.
+- On the saved mesh, a 0.14 m preview rebuild measured about 24 ms and precise
+  confirmation about 123 ms. In the workshop's 90,747-segment target set, repeated
+  eligible snap queries measured 2.09 ms median and 6.21 ms maximum. Initial target
+  collection and projection still take about 1.33 seconds; snapping off skips them.
+- Actual modal/RNA method tests cover 500 drag events coalescing to one latest
+  pointer update, the 30 Hz timer cap, zero idle hover work, queued final values,
+  cached invalid widths, cancellation over the sidebar and timer cleanup.
+- Dense ownership indexing agrees with full even-odd tests over 2,340 positions
+  on transformed geometry containing holes and separate islands.
+- All 16 regression suites passed. A fresh plot of the saved mesh and evaluated
+  Blender outline fill was visually checked at identical scale: the 0.14 m result
+  is a continuous hollow frame with the original boundary retained as its inner edge.
+
+These are background Blender 5.2 CPU timings and automated interaction tests,
+not measurements of live viewport FPS. The user scene was read without saving
+or reverting it. Confirmation still validates final geometry before committing.
+
 ## Version 1.6.1
 
 - Reproduced a failure after Enter using the workshop's native Bezier guides:

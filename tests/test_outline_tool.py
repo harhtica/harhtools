@@ -118,15 +118,20 @@ fixture = square('Mouse fixture'); prepared = [og.prepare_sources([fixture])]
 class Harness:
     mouse = ot.VIEW3D_OT_harhtools_make_outline.mouse
     modal = ot.VIEW3D_OT_harhtools_make_outline.modal
+    queue_pointer = ot.VIEW3D_OT_harhtools_make_outline.queue_pointer
+    flush_pending = ot.VIEW3D_OT_harhtools_make_outline.flush_pending
     over_controls = lambda self, event: False
     def __init__(self):
         self._done = False; self._dragging = True; self._error = ''
+        self._pending_mouse = None; self._last_mouse = None; self._preview_dirty = False
         self._region = SimpleNamespace(x=0,y=0,width=100,height=100)
         self._area = SimpleNamespace(type='VIEW_3D',tag_redraw=lambda:None)
         self._view = None; self._prepared = prepared
         self._world_loops = [list(loop) for loop in prepared[0]['world_loops']]
         self.point = Vector((.6,0,0)); self._plane_point = lambda xy:self.point
-        self.hit = None; self._snap = SimpleNamespace(query=lambda *args,**kwargs:self.hit)
+        self.hit = None; self._snap = SimpleNamespace(query=lambda *args,**kwargs:self.hit,
+            nearest_source=lambda point,allowed_owners:ot._nearest_boundary(point,
+                [list(loop) for i in allowed_owners for loop in self._prepared[i]['world_loops']]))
         self._snap_hit = None; self._measure = None
     def report(self,*args):pass
 

@@ -8,6 +8,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from extension import outline_geometry as og
 from extension import curve_geometry as cg
+from extension import shape_builder as sb
 
 REPORTS=[]
 
@@ -53,13 +54,15 @@ def rejects(callback,fragment=None):
         return str(exc)
     raise AssertionError('Expected safe rejection')
 
-def check_width(prepared,result,width,limit=1e-6):
+def check_width(prepared,result,width,limit=1e-6,max_samples=None):
     # For regular shape offsets, each output sample is width away from the
     # nearest original edge. Convex closing-corner miters are excluded here.
     source_edges=[(a,b) for loop in prepared['loops'] for a,b in zip(loop,loop[1:]+loop[:1])]
     deviations=[]
     for loop in result['offset_loops']:
-        for a,b in zip(loop,loop[1:]+loop[:1]):
+        pairs=list(zip(loop,loop[1:]+loop[:1]))
+        if max_samples:pairs=pairs[::max(1,len(pairs)//max_samples)]
+        for a,b in pairs:
             p=((a[0]+b[0])*.5,(a[1]+b[1])*.5)
             dist=math.sqrt(min(og._point_segment_sq(p,c,d) for c,d in source_edges))
             deviations.append(abs(dist-width))
@@ -191,6 +194,56 @@ assert result['diagnostics']['trimmed_offset_intersections']==1
 assert len(result['offset_loops'])==1 and evaluated_area(result)>0
 check_width(prepared,result,.05,prepared['tolerance']*1.1)
 REPORTS.append({'case':'pointed arch dense arc offsets trim cleanly at convex apex'})
+
+# A complete Gothic four-lobe construction, through the actual Shape Builder
+# output path. Outside offsets must remove inverted concave-notch fragments,
+# remain hollow when Blender evaluates them, and work after mesh conversion.
+for selected in bpy.context.selected_objects:selected.select_set(False)
+sources=[]
+for arm in range(4):
+    angle=arm*math.pi/2
+    for label,x,y,r in [('C',0,2.065,.45),('L',-.3,1.12,.65),('R',.3,1.12,.65)]:
+        cx=x*math.cos(angle)-y*math.sin(angle);cy=x*math.sin(angle)+y*math.cos(angle)
+        obj=circle(f'Gothic {arm}{label}',r,Matrix.Translation((cx,cy,0)));obj.select_set(True);sources.append(obj)
+bpy.context.view_layer.update();arr,_=sb.build_pen_arrangement(bpy.context)
+union_data=cg.curve_data(arr,set(range(len(arr['regions']))));union_obj=bpy.data.objects.new('Gothic union',union_data)
+bpy.context.collection.objects.link(union_obj)
+matrix=Matrix.Identity(4)
+for i,axis in enumerate((arr['u'],arr['v'],arr['normal'])):
+    for j in range(3):matrix[j][i]=axis[j]
+matrix.translation=arr['origin'];union_obj.matrix_world=matrix
+bpy.context.view_layer.update();evaluated=union_obj.evaluated_get(bpy.context.evaluated_depsgraph_get())
+mesh=bpy.data.meshes.new_from_object(evaluated);mesh_obj=bpy.data.objects.new('Dense Gothic union mesh',mesh)
+bpy.context.collection.objects.link(mesh_obj);mesh_obj.matrix_world=matrix;bpy.context.view_layer.update()
+for source in [union_obj,mesh_obj]:
+    precise=og.prepare_sources([source]);preview=og.prepare_sources([source],tolerance=precise['scale']*5e-4)
+    for mode,prepared in [('precise',precise),('preview',preview)]:
+        start=time.perf_counter();result=og.build_outline(prepared,.14,direction='OUTWARD');elapsed=time.perf_counter()-start
+        assert result['diagnostics']['topology_preserved'] and len(result['border_loops'])==2
+        expected=abs(sum(og._area(loop) for loop in result['border_loops']));filled=evaluated_area(result)
+        assert abs(filled-expected)/expected<1e-4,(filled,expected)
+        # Check the generated boundary against all original source edges, not
+        # merely the local edge that produced it. A notch spike fails this.
+        check_width(prepared,result,.14,prepared['tolerance']*3.1,max_samples=256)
+        assert elapsed<2.,('Unexpected quadratic outline regression',elapsed)
+        REPORTS.append({'case':f'Gothic .14 outside {source.type} {mode}','seconds':elapsed,'points':result['diagnostics']['poly_points'],'evaluated_area':filled})
+    if source.type=='MESH':
+        assert len(preview['loops'][0])<len(precise['loops'][0])*.6
+        # Every original mesh boundary sample stays within the promised preview
+        # chord tolerance. Sharp cusp vertices must not move or be flattened.
+        edges=[(a,b) for loop in preview['loops'] for a,b in zip(loop,loop[1:]+loop[:1])]
+        inverse=preview['matrix_world'].inverted()
+        for segment in preview['world_segments']:
+            point=inverse@Vector(segment['cp'][0]);point=(point.x,point.y)
+            assert min(og._point_segment_sq(point,a,b) for a,b in edges)<(preview['tolerance']*1.01)**2
+        source_loop=precise['loops'][0]
+        for i,p in enumerate(source_loop):
+            incoming=og._sub(p,source_loop[i-1]);outgoing=og._sub(source_loop[(i+1)%len(source_loop)],p)
+            turn=math.atan2(og._cross(incoming,outgoing),og._dot(incoming,outgoing))
+            if abs(turn)>.3:
+                # Same preparation basis is independent of sampling tolerance.
+                assert min(math.dist(p,q) for q in preview['loops'][0])<1e-7
+        REPORTS.append({'case':'dense mesh preview chord bound and sharp cusp preservation'})
 
 directory=Path(__file__).parent/'_artifacts';directory.mkdir(exist_ok=True)
 (directory/'outline_geometry_report.json').write_text(json.dumps(REPORTS,indent=2))

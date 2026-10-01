@@ -1,11 +1,11 @@
-# harhtools 1.6.1
+# harhtools 1.6.2
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.6.1.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.6.2.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -99,6 +99,12 @@ the even border thickness. A target on the wrong side of a shape cannot set that
 shape's inset/outset. Hidden or locked guides and out-of-plane geometry are excluded.
 Finish and restart the tool after editing snap-target geometry.
 
+Dragging processes the latest pointer position at most 30 times per second;
+idle hover does not run snapping or rebuild the border. Numeric edits coalesce
+the same way, and releasing the mouse or pressing Enter uses the final value.
+The first snap query can briefly pause while a large scene's guide cache is built;
+that scan is skipped entirely while snapping remains off.
+
 Each selected object receives an independent outline. Original shapes are kept
 and hidden by default so their filled centers do not obscure the new border.
 Uncheck **Hide Original Shapes** to keep them visible. Outputs stay in the sources'
@@ -106,8 +112,10 @@ collections and inherit their materials. No library preset is saved automaticall
 
 The result is a filled, editable **POLY Curve** with closed border splines. Bezier
 inputs are adaptively sampled with a recorded world-space error bound; the new
-offset is not an exact Bezier curve. Original Bezier data stays intact. The preview
-uses lighter sampling; confirmation rebuilds at final precision. Opening corners
+offset is not an exact Bezier curve. Dense mesh/poly boundaries are simplified
+within the same recorded tolerance while preserving corners. Original source
+data stays intact. The preview uses lighter sampling; confirmation rebuilds at
+final precision. Opening corners
 use circular joins to avoid long spikes. Widths that collapse tips, cross boundaries,
 or merge holes are rejected, with the original shape preserved. NURBS, open paths,
 nonplanar shapes and ambiguous intersecting source loops are not supported.

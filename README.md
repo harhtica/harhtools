@@ -4,7 +4,21 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.6.1
+## Version 1.6.2
+
+- Fixes valid outside outlines being rejected at concave Gothic junctions,
+  including a 0.14 m border on a Shape Builder result converted to mesh.
+- Drag updates process the latest pointer position, with a maximum of 30 preview
+  rebuilds per second. Idle hover and unchanged settings do not rebuild geometry.
+- Indexed source boundaries speed up geometry snapping on dense shapes. A lighter
+  preview keeps final confirmation precise and leaves original geometry intact.
+
+[Download 1.6.2](https://harhtica.github.io/harhtools/harhtools-1.6.2.zip), or use
+the Blender repository below. Reverting a blend file does not reload Python code.
+See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
+and [regression tests](tests/README.md).
+
+## Included from 1.6.1
 
 - Fixes Shape Builder fills that looked correct in the preview but lost filled
   areas after Enter at closely spaced Gothic curve junctions.
@@ -12,11 +26,6 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   selection. A failed fill rolls back every object in the batch.
 - Fixes the `_RestrictData ... window_managers` error when enabling Harhtools
   through Preferences. The reload helper can also recover its failed enable state.
-
-[Download 1.6.1](https://harhtica.github.io/harhtools/harhtools-1.6.1.zip), or use
-the Blender repository below. Reverting a blend file does not reload Python code.
-See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
-and [regression tests](tests/README.md).
 
 ## Included from 1.6.0
 
@@ -79,7 +88,7 @@ bridge credentials, or external Python dependencies in the extension package.
 ## Release your next change
 
 1. Edit the Python files in `extension/`.
-2. Increase `version` in `extension/blender_manifest.toml`, for example to `1.6.2`.
+2. Increase `version` in `extension/blender_manifest.toml`, for example to `1.6.3`.
 3. Run the builder below using Python 3.11+ (Blender's bundled Python works).
 4. Test the resulting ZIP in Blender, then commit and push the source and `docs/`.
 

@@ -392,6 +392,106 @@ def overlapping_source_owners():
     return {'overlap_inset_distance': .5, 'wrong_side_nearest_does_not_mask_valid_target': True}
 
 
+def dense_source_spatial_index():
+    count = 4096
+    loops = [[(r*math.cos(math.tau*i/count), r*math.sin(math.tau*i/count), 0)
+              for i in range(count)] for r in (1.0, 2.0)]
+    segments = [{'kind':'LINE', 'cp':[a,b], 'owner':owner}
+                for owner,loop in enumerate(loops) for a,b in zip(loop,loop[1:]+loop[:1])]
+    bpy.context.view_layer.update()
+    snap = OutlineSnapCache(bpy.context,(0,0,0),(0,0,1),2,loops,source_segments=segments)
+    maximum_tested = 0
+    for owner,r in enumerate((1.0,2.0)):
+        for index in (3,547,1600,2700,4094):
+            angle=math.tau*(index+.5)/count
+            point=((r+.2)*math.cos(angle),(r+.2)*math.sin(angle),0)
+            before=snap.stats['source_segments_tested']
+            distance,near=snap.nearest_source(point,{owner})
+            expected=.2+r*(1-math.cos(math.pi/count))
+            assert abs(distance-expected)<1e-10,(distance,expected)
+            expected_point=Vector((r*math.cos(math.pi/count)*math.cos(angle),r*math.cos(math.pi/count)*math.sin(angle),0))
+            assert (near-expected_point).length<1e-6
+            tested=snap.stats['source_segments_tested']-before
+            maximum_tested=max(maximum_tested,tested)
+            assert tested<100, tested
+    return {'source_segments':len(segments), 'owner_filtered_queries':10,
+            'maximum_exact_segments_tested':maximum_tested, 'analytic_polygon_distance_verified':True}
+
+
+def dense_target_candidate_pruning():
+    count=4096
+    loop=[(math.cos(math.tau*i/count),math.sin(math.tau*i/count),0) for i in range(count)]
+    source=wire('dense source',loop,[(i,(i+1)%count) for i in range(count)])
+    source.select_set(True)
+    points=[];edges=[]
+    for i in range(301):
+        x=1.2+i*.0002
+        points.extend(((x,-.5,0),(x,.5,0)))
+        edges.append((2*i,2*i+1))
+    wire('crowded target',points,edges)
+    bpy.context.view_layer.update()
+    snap=OutlineSnapCache(bpy.context,(0,0,0),(0,0,1),2,[loop])
+    hit=snap.query(screen((1.2,0,0)),REGION,VIEW)
+    assert hit and abs(hit['thickness']-.2)<1e-6,hit
+    assert snap.stats['source_searches']==1,snap.stats
+    assert snap.stats['source_segments_tested']<100,snap.stats
+    return {'nearby_target_segments':301,'source_segments':count,
+            'source_distance_searches':snap.stats['source_searches'],
+            'exact_segments_tested':snap.stats['source_segments_tested']}
+
+
+def perspective_line_cache():
+    source_square()
+    a,b=(1.5,-1,0),(2.3,1.1,0)
+    wire('perspective line',[a,b])
+    snap=cache()
+    perspective=SimpleNamespace(perspective_matrix=Matrix(((.25,0,0,0),(0,.25,0,0),(0,0,.25,0),(.2,.07,0,1))))
+    for t in (.01,.23,.71,.99):
+        point=tuple((1-t)*x+t*y for x,y in zip(a,b))
+        hit=snap.query(screen(point,perspective),REGION,perspective)
+        assert hit and hit['pixel_distance']<1e-5,hit
+        assert abs(hit['target_parameter']-t)<1e-6,hit
+        assert (hit['world_point']-Vector(point)).length<1e-6,hit
+    return {'perspective_correct_world_line_parameters':4,'projection_rebuilds':snap.stats['projection_rebuilds']}
+
+
+def lazy_scene_targets():
+    source_square()
+    wire('lazy target',[(1.5,-1,0),(1.5,1,0)])
+    bpy.context.view_layer.update()
+    # Invoke while snapping is off must not ask for the scene object inventory
+    # or dependency graph. Plain boundary measurement remains available.
+    readonly=SimpleNamespace(selected_objects=bpy.context.selected_objects)
+    snap=OutlineSnapCache(readonly,(0,0,0),(0,0,1),2,[SQUARE],lazy_targets=True)
+    assert snap.stats['target_rebuilds']==0 and snap.stats['projection_rebuilds']==0
+    assert abs(snap.nearest_source((1.5,0,0))[0]-.5)<1e-12
+    snap.context=bpy.context
+    hit=snap.query((687.5,500),REGION,VIEW)
+    assert hit and hit['object_name']=='lazy target'
+    assert snap.stats['target_rebuilds']==1 and snap.stats['projection_rebuilds']==1
+    assert snap.query((687.5,510),REGION,VIEW)
+    assert snap.stats['target_rebuilds']==1
+    return {'snap_off_scene_scans':0,'first_snap_query_builds':1,'plain_source_measurement_available':True}
+
+
+def shared_mesh_vertex_filters():
+    source_square()
+    target=wire('shared vertex target',[(1.5,-1,0),(1.5,0,0),(1.5,1,0),(1.5,2,.001)],[(0,1),(1,2),(2,3)])
+    target.data.edges[1].hide=True
+    snap=cache()
+    assert snap.stats['target_segments']==1 and snap.stats['off_plane_segments']==1,snap.stats
+    assert snap.query(screen((1.5,-.5,0)),REGION,VIEW)
+    assert snap.query(screen((1.5,.5,0)),REGION,VIEW) is None
+    target.data.edges[1].hide=False
+    snap.rebuild_targets()
+    assert snap.stats['target_segments']==2 and snap.stats['off_plane_segments']==1,snap.stats
+    assert snap.query(screen((1.5,.5,0)),REGION,VIEW)
+    target.data.vertices[1].hide=True
+    snap.rebuild_targets()
+    assert snap.stats['target_segments']==0 and snap.stats['off_plane_segments']==1,snap.stats
+    return {'cached_shared_coordinates_preserve_hidden_edges_vertices_and_off_plane_rejection':True}
+
+
 run('visible selectable target filtering and constant thickness', exclusions_and_uniform_distance)
 run('off-plane and edge-on snap rejection', plane_rejection)
 run('true target cubic refinement, including perspective', bezier_refinement)
@@ -405,6 +505,11 @@ run('edited target endpoints and control handles', edited_target_geometry)
 run('geometry module exact boundary contract', geometry_module_contract)
 run('real Bezier target CPU query baseline', cpu_baseline)
 run('per-source side ownership and competing target filter', overlapping_source_owners)
+run('dense owner-filtered source spatial index', dense_source_spatial_index)
+run('dense candidate source-distance pruning', dense_target_candidate_pruning)
+run('cached perspective line parameters', perspective_line_cache)
+run('lazy scene targets with snapping disabled', lazy_scene_targets)
+run('shared mesh vertex visibility filters', shared_mesh_vertex_filters)
 
 report = {'passed': all(r['passed'] for r in RESULTS), 'tests': RESULTS,
           'scope': 'Background Blender geometry and projection tests. No UI or GPU interaction.'}

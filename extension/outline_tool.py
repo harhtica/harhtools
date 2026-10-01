@@ -1,11 +1,13 @@
 """Interactive, non-destructive planar outlines with optional geometry snapping."""
 import math
+import time
 import bpy
 from mathutils import Vector
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, PointerProperty
 from . import outline_geometry, outline_snap, shortcuts
 
 STATE_KEY = 'harhtools_outline_preview'
+PREVIEW_INTERVAL = 1 / 30
 
 
 def settings(context=None):
@@ -15,7 +17,13 @@ def settings(context=None):
 def _changed(_cfg, context):
     state = bpy.app.driver_namespace.get(STATE_KEY)
     if state and not getattr(state, '_updating_settings', False):
-        state.refresh(context)
+        state.request_refresh(context)
+
+
+def _snap_changed(_cfg, context):
+    state = bpy.app.driver_namespace.get(STATE_KEY)
+    if state:
+        state.request_pointer(context)
 
 
 class HARHTOOLS_PG_outline(bpy.types.PropertyGroup):
@@ -26,7 +34,7 @@ class HARHTOOLS_PG_outline(bpy.types.PropertyGroup):
         ('INWARD', 'Inside', 'Create a border inside the original shape'),
         ('OUTWARD', 'Outside', 'Create a border outside the original shape')], update=_changed)
     snap_geometry: BoolProperty(name='Snap to Geometry', default=False,
-                                description='Snap thickness to nearby coplanar curves and mesh edges while dragging', update=_changed)
+                                description='Snap thickness to nearby coplanar curves and mesh edges while dragging', update=_snap_changed)
     hide_sources: BoolProperty(name='Hide Original Shapes', default=True,
                                description='Keep the original shapes recoverable but hide their filled centers after creating outlines')
 
@@ -132,12 +140,50 @@ def inside_sources(point, prepared):
     return bool(source_owners_at(point, prepared, inside=True))
 
 
+def _inside_index(item):
+    """Index immutable prepared boundaries by height for frequent snap picking."""
+    cached = item.get('_harhtools_inside_index')
+    if cached is not None:
+        return cached
+    points = [point for loop in item['loops'] for point in loop]
+    xmin = min(p[0] for p in points); xmax = max(p[0] for p in points)
+    ymin = min(p[1] for p in points); ymax = max(p[1] for p in points)
+    count = min(128, max(8, math.ceil(math.sqrt(len(points)))))
+    step = max((ymax - ymin) / count, 1e-30)
+    buckets = [[] for _ in range(count)]
+    for loop in item['loops']:
+        for a, b in zip(loop, loop[1:] + loop[:1]):
+            if a[1] == b[1]:
+                continue
+            low = max(0, min(count - 1, int((min(a[1], b[1]) - ymin) / step)))
+            high = max(0, min(count - 1, int((max(a[1], b[1]) - ymin) / step)))
+            edge = (a[0], a[1], b[0], b[1])
+            for index in range(low, high + 1):
+                buckets[index].append(edge)
+    cached = (xmin, xmax, ymin, ymax, step, buckets)
+    item['_harhtools_inside_index'] = cached
+    return cached
+
+
+def _inside_prepared(xy, item):
+    xmin, xmax, ymin, ymax, step, buckets = _inside_index(item)
+    x, y = xy
+    if x < xmin or x > xmax or y < ymin or y > ymax:
+        return False
+    index = min(len(buckets) - 1, max(0, int((y - ymin) / step)))
+    inside = False
+    for ax, ay, bx, by in buckets[index]:
+        if (ay > y) != (by > y) and ax + (y - ay) * (bx - ax) / (by - ay) > x:
+            inside = not inside
+    return inside
+
+
 def source_owners_at(point, prepared, *, inside):
     owners = set()
     for index, item in enumerate(prepared):
         delta = Vector(point) - Vector(item['origin'])
         xy = (delta.dot(Vector(item['u'])), delta.dot(Vector(item['v'])))
-        if outline_geometry._inside(xy, item['loops']) == inside:
+        if _inside_prepared(xy, item) == inside:
             owners.add(index)
     return owners
 
@@ -169,6 +215,10 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         if context.area is None or context.area.type != 'VIEW_3D':
             return self.execute(context)
         self._done = False; self._handler = None; self._cursor_handler = None
+        self._timer = None; self._wm = context.window_manager
+        self._pending_mouse = None; self._last_mouse = None
+        self._preview_dirty = True; self._preview_key = None
+        self._next_tick = 0.0
         self._area = context.area; self._window = context.window; self._workspace = context.workspace
         self._dragging = False; self._updating_settings = False; self._results = []; self._error = ''
         self._batches = None; self._shader = None; self._snap_hit = None; self._measure = None
@@ -180,15 +230,17 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             self._sources, self._prepared = prepare_selection(context)
             # Dragging uses a lighter outline. Confirmation recomputes the
             # tighter final geometry and validates it before changing the scene.
-            self._preview_prepared = [outline_geometry.prepare_sources([source], tolerance=item['scale'] * 2e-4)
+            self._preview_prepared = [outline_geometry.prepare_sources([source], tolerance=item['scale'] * 5e-4)
                                       for source, item in zip(self._sources, self._prepared)]
             self._signature = source_signature(self._sources)
+            for item in self._prepared:
+                _inside_index(item)
             first = self._prepared[0]
             self._origin = Vector(first['origin']); self._normal = Vector(first['normal'])
             self._world_loops = [list(loop) for item in self._prepared for loop in item['world_loops']]
             self._snap = outline_snap.OutlineSnapCache(context, self._origin, self._normal,
                 max(item['scale'] for item in self._prepared), self._world_loops,
-                excluded_objects=self._sources,
+                excluded_objects=self._sources, lazy_targets=not cfg.snap_geometry,
                 source_segments=[dict(segment, owner=index) for index, item in enumerate(self._prepared)
                                  for segment in item['world_segments']])
             bpy.app.driver_namespace[STATE_KEY] = self
@@ -196,15 +248,47 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             self._handler = bpy.types.SpaceView3D.draw_handler_add(self.draw_preview, (), 'WINDOW', 'POST_VIEW')
             self._cursor_handler = bpy.types.SpaceView3D.draw_handler_add(self.draw_hint, (), 'WINDOW', 'POST_PIXEL')
             self._window.cursor_modal_set('CROSSHAIR')
+            self._timer = self._wm.event_timer_add(PREVIEW_INTERVAL, window=self._window)
             context.window_manager.modal_handler_add(self)
             return {'RUNNING_MODAL'}
         except Exception as exc:
             self.finish(context, cancel=True); self.report({'ERROR'}, str(exc)); return {'CANCELLED'}
 
+    def request_refresh(self, context):
+        if not self._done:
+            self._preview_dirty = True
+            self._area.tag_redraw()
+
+    def request_pointer(self, context):
+        if self._done:
+            return
+        self._snap_hit = None; self._measure = None
+        if self._dragging and self._last_mouse is not None:
+            self._pending_mouse = self._last_mouse
+        self._area.tag_redraw()
+
+    def queue_pointer(self, event):
+        self._pending_mouse = (event.mouse_x, event.mouse_y)
+        self._last_mouse = self._pending_mouse
+
+    def flush_pending(self, context, *, preview=True):
+        pending = self._pending_mouse
+        self._pending_mouse = None
+        if pending is not None:
+            from types import SimpleNamespace
+            self.mouse(context, SimpleNamespace(mouse_x=pending[0], mouse_y=pending[1]))
+        if preview and self._preview_dirty:
+            self.refresh(context)
+
     def refresh(self, context):
         if self._done:
             return
         cfg = settings(context)
+        key = (float(cfg.thickness), cfg.direction)
+        self._preview_dirty = False
+        if key == getattr(self, '_preview_key', None):
+            return  # Identical valid or invalid widths do not need another solve.
+        self._preview_key = key
         try:
             prepared = [preview if cfg.thickness > preview['tolerance'] * 8 else precise
                         for preview, precise in zip(self._preview_prepared, self._prepared)]
@@ -245,20 +329,21 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             candidate = Vector(self._snap_hit['world_point'])
             # A target on the opposite side cannot set an inset/outset that
             # actually touches it. Never show a false snap on that side.
-            if eligible(candidate):
+            owners = eligible(candidate)
+            if owners:
                 point = candidate
             else:
                 self._snap_hit = None
-        owners = eligible(point)
-        loops = [list(loop) for index in owners for loop in self._prepared[index]['world_loops']]
-        nearest = _nearest_boundary(point, loops)
-        if nearest is None:
-            self._measure = None; self._area.tag_redraw()
-            return
-        distance, foot = nearest
         if self._snap_hit:
             distance = self._snap_hit['thickness']
             foot = Vector(self._snap_hit['nearest_source_point'])
+        else:
+            owners = eligible(point)
+            nearest = self._snap.nearest_source(point, allowed_owners=owners) if owners else None
+            if nearest is None:
+                self._measure = None; self._area.tag_redraw()
+                return
+            distance, foot = nearest
         self._measure = (foot, point)
         if self._dragging and distance > 1e-6:
             if abs(distance - cfg.thickness) > max(1e-7, cfg.thickness * 1e-4):
@@ -270,40 +355,59 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             return {'CANCELLED'}
         if self._area.type != 'VIEW_3D' or context.mode != 'OBJECT':
             self.finish(context, cancel=True); return {'CANCELLED'}
+        if event.type == 'TIMER':
+            # Blender Event does not expose its originating Timer. Coalesce by
+            # elapsed time, and pass timer events on to other listeners.
+            now = time.monotonic()
+            if now >= self._next_tick:
+                self._next_tick = now + PREVIEW_INTERVAL
+                self.flush_pending(context)
+            return {'PASS_THROUGH'}
+        if event.type == 'ESC' and event.value == 'PRESS':
+            self.finish(context, cancel=True); return {'CANCELLED'}
         if self.over_controls(event):
             self._dragging = False
+            self._pending_mouse = None
             return {'PASS_THROUGH'}
-        if event.type in {'ESC', 'RIGHTMOUSE'} and event.value == 'PRESS':
+        if event.type == 'RIGHTMOUSE' and event.value == 'PRESS':
             self.finish(context, cancel=True); return {'CANCELLED'}
         if event.type in {'RET', 'NUMPAD_ENTER'} and event.value == 'PRESS':
-            if self._error or not self._results:
-                self.report({'WARNING'}, self._error or 'Choose a valid thickness first.'); return {'RUNNING_MODAL'}
             try:
+                # A typed value or final mouse move may still be queued. Always
+                # validate the CURRENT precise shape, not a stale preview error.
+                self.flush_pending(context, preview=False)
                 cfg = settings(context)
                 results = make_results(self._prepared, cfg.thickness, cfg.direction)
                 outputs = commit_outlines(context, self._sources, results, self._signature,
                                           hide_sources=cfg.hide_sources)
             except Exception as exc:
-                self.report({'ERROR'}, str(exc)); return {'RUNNING_MODAL'}
+                self._error = str(exc)
+                self.report({'ERROR'}, self._error); return {'RUNNING_MODAL'}
             self.finish(context)
             self.report({'INFO'}, f'Created {len(outputs)} outline(s). Originals are recoverable; nothing was saved to Shape Library.')
             return {'FINISHED'}
         if event.type == 'S' and event.value == 'PRESS':
             cfg = settings(context); cfg.snap_geometry = not cfg.snap_geometry
-            self.mouse(context, event); return {'RUNNING_MODAL'}
+            if self._dragging:
+                self.queue_pointer(event)
+            return {'RUNNING_MODAL'}
         if event.type in {'MIDDLEMOUSE', 'WHEELUPMOUSE', 'WHEELDOWNMOUSE', 'TRACKPADPAN', 'TRACKPADZOOM', 'NDOF_MOTION'}:
-            self._dragging = False; return {'PASS_THROUGH'}
+            self._dragging = False; self._pending_mouse = None; return {'PASS_THROUGH'}
         if event.type == 'LEFTMOUSE':
             if event.value == 'PRESS':
                 self._dragging = True
-                self.mouse(context, event)
+                self.queue_pointer(event)
+                self.flush_pending(context)
             elif event.value == 'RELEASE':
                 if self._dragging:
-                    self.mouse(context, event)
+                    self.queue_pointer(event)
+                    self.flush_pending(context)
                 self._dragging = False
             return {'RUNNING_MODAL'}
         if event.type == 'MOUSEMOVE':
-            self.mouse(context, event); return {'RUNNING_MODAL'}
+            if self._dragging:
+                self.queue_pointer(event)
+            return {'RUNNING_MODAL'}
         return {'RUNNING_MODAL'}
 
     def draw_preview(self):
@@ -357,6 +461,11 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         if getattr(self, '_done', False):
             return
         self._done = True
+        timer = getattr(self, '_timer', None)
+        if timer is not None:
+            self._wm.event_timer_remove(timer)
+            self._timer = None
+        self._pending_mouse = None
         for name in ('_handler', '_cursor_handler'):
             handler = getattr(self, name, None)
             if handler:
