@@ -4,7 +4,19 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.11.2
+## Version 1.12.0
+
+- **Fit / Align**, separate from Shape Builder, adds **Fit Selected into Active**.
+  Select shapes first and the frame last. One mesh with several disconnected
+  shapes and several selected objects are treated as one arrangement.
+- **Proportional Scale** preserves proportions; disable it to fit width and
+  height separately. Fitting uses visible outer geometry and the actual closed
+  target boundary, with the frame opening preferred over its outside edge.
+- **Equal Boundary Spacing** balances the closest gaps to a convex frame.
+  **Gap** supports Roblox studs; **Fill** leaves additional room. The frame,
+  selection and unselected objects stay fixed; Ctrl+Z undoes the operation.
+
+## Included from 1.11.2
 
 - Every bevel preset opens directly in Blender's editable point graph. The
   sidebar no longer uses profile thumbnails or requires an extra edit click.
@@ -78,7 +90,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.11.2](https://harhtica.github.io/harhtools/harhtools-1.11.2.zip), or use
+[Download 1.12.0](https://harhtica.github.io/harhtools/harhtools-1.12.0.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

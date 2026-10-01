@@ -59,6 +59,42 @@ This changes display/input only, not geometry, transforms or scene units.
 Blender's own panels keep their native labels. Match your Roblox import scale
 settings to the source units when exporting.
 
+## Fit / Align
+
+Open the **Fit / Align** tab (the second sidebar icon). This replaces the old
+Transform page and keeps these controls separate from Shape Builder.
+
+In Object Mode, select the shapes to fit, then select the surrounding frame
+last so it is active. Click **Fit Selected into Active**. All selected source
+objects move and scale as one arrangement; disconnected shapes within one mesh
+work the same way. The active frame stays fixed, and Ctrl+Z undoes the fit.
+
+- **Proportional Scale** starts on and preserves proportions, including depth.
+  Turn it off to fit width and height separately along the target's plane axes.
+- **Equal Boundary Spacing** starts on. It balances the closest outer-edge gaps
+  by maximizing minimum clearance to a convex frame, such as a circle, rectangle
+  or pointed arch. This centers a three-circle arrangement using its outer
+  contacts, rather than its bounding-box center. It does not make unlike shapes
+  parallel at every point or rearrange the individual circles.
+- **Gap** sets minimum clearance from the outer geometry to the frame, in studs
+  or scene units. **Fill** below 100 percent leaves additional room.
+- **Frame Opening** uses the largest inner opening when the target has one;
+  otherwise it uses the largest outer boundary. **Outer Boundary** explicitly
+  fits to the frame's outside contour instead.
+
+The target must have a closed planar mesh or Bezier/Poly boundary. Target base
+boundaries define the frame; selected sources are measured from their evaluated
+mesh geometry, including modifiers. The solver encloses all source geometry in
+one convex envelope and checks entire edges against the target, not just object
+boxes or origins. Concave targets use a conservative centered fit with Equal
+Boundary Spacing off. Selected sources are centered onto the target plane.
+
+Fitting does not remesh or change vertex counts. A rotated, non-proportional fit
+may need a private transformed mesh/curve data copy because Blender object
+channels cannot represent shear. Linked copies remain unchanged. Constraints,
+drivers or modifiers that prevent a verified fit cancel the operation and restore
+the original state. Fitting does not save Shape Library entries.
+
 ## Editable bevel profiles
 
 **Make Outline** is above the bevel section so it stays reachable. **Add Bevel**

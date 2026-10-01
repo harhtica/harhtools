@@ -123,6 +123,9 @@ try:
     working.bevel_profile.points[3].location.x-=.02;working.bevel_profile.update();package.profile_editor.tick()
     profile_data=package.profile_editor.serialize(working)
     wm.harhtools_edit_arc.match_spacing=False
+    wm.harhtools_fit.gap=.075
+    wm.harhtools_fit.proportional=False
+    wm.harhtools_fit.equal_spacing=False
     watcher = package.live_reload
     previous_curve = package.curve_geometry if hasattr(package, 'curve_geometry') else package.shape_builder.curve_geometry
     stamp_version('90.0.1')
@@ -135,6 +138,8 @@ try:
     assert wm.harhtools_outline.edited_profile==working
     assert package.profile_editor.serialize(working)==profile_data
     assert wm.harhtools_distance_units=='SCENE' and not wm.harhtools_edit_arc.match_spacing
+    assert abs(wm.harhtools_fit.gap-.075)<1e-7
+    assert not wm.harhtools_fit.proportional and not wm.harhtools_fit.equal_spacing
     print('PASS: full package reload preserves real outline/array/builder/theme settings')
 
     watcher = package.live_reload

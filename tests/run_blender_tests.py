@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 TESTS = (
+    'test_fit_tool.py',
     'test_fill_groups.py',
     'test_fill_groups_blender.py',
     'test_manual_library_only.py',

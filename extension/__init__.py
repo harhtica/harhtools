@@ -1,7 +1,7 @@
 """harhtools: planar Shape Builder, arrays, and object centering for Blender."""
 
 import bpy
-from . import icons, shortcuts, shape_library, shape_builder, array_tool, outline_tool, circle_arc, edit_arc, centering, live_reload, display_units, profile_editor
+from . import icons, shortcuts, shape_library, shape_builder, array_tool, outline_tool, circle_arc, edit_arc, centering, live_reload, display_units, profile_editor, fit_tool
 
 
 def register():
@@ -17,6 +17,7 @@ def register():
         profile_editor.register()
         circle_arc.register()
         edit_arc.register()
+        fit_tool.register()
         centering.register()
         live_reload.register()
     except Exception:
@@ -27,6 +28,7 @@ def register():
 def unregister():
     live_reload.unregister()
     centering.unregister()
+    fit_tool.unregister()
     edit_arc.unregister()
     circle_arc.unregister()
     profile_editor.unregister()

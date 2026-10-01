@@ -1,5 +1,25 @@
 # Release verification
 
+## Version 1.12.0
+
+- Six relevant Blender 5.2 suites passed: fitting, profile panel, distance units,
+  live reload integration, reload bootstrap and manual-only Shape Library.
+  The fitting suite was rerun after the final precision, UI and parenting checks.
+- The screenshot-style fixture has three double rings in one mesh and a circular
+  frame with a smaller inner opening. At a requested 0.2-unit gap, all three
+  measured outer contact gaps differ by less than 0.001 units. Separate objects
+  produce the same arrangement. The synthetic fit takes approximately 60 ms;
+  this is not a live viewport FPS measurement.
+- Coverage includes proportional and independent scale, exact rotated free
+  scaling with protected linked data, Bezier curves, nine rotation/scale cases
+  with and without a gap, concave boundary crossings, preserved target/selection,
+  protected children, a target parented under a source, constraint rollback,
+  stud inputs, read-only panel drawing and no automatic shape-library writes.
+- Native restricted-context registration and previous-release code reload pass,
+  including preservation of gap and spacing settings. Tests use background
+  Blender and simulated panel calls. The open desktop session was not operated,
+  and no user blend was saved or reverted.
+
 ## Version 1.11.2
 
 - All 19 built-in profiles automatically expose the native CurveProfile editor

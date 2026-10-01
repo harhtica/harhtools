@@ -16,7 +16,7 @@ import bpy
 from mathutils import Vector
 from bpy.props import EnumProperty
 import time
-from . import icons, shortcuts, array_tool, shape_library, outline_tool, live_reload
+from . import icons, shortcuts, array_tool, shape_library, outline_tool, live_reload, fit_tool
 
 
 _NOTICE_KEY = 'arch_tools_center_notification'
@@ -274,21 +274,22 @@ class OBJECT_OT_center_selected_to_active(bpy.types.Operator):
 class VIEW3D_OT_harhtools_panel_tab(bpy.types.Operator):
     bl_idname='view3d.harhtools_panel_tab'
     bl_label='harhtools Tab'
-    bl_description='Open Shape Builder, Transform, Array, your shape library, or settings'
+    bl_description='Open Shape Builder, Fit / Align, Array, your shape library, or settings'
     tab: EnumProperty(items=[('TOOLS','Shape Builder','Build shapes from selected outlines'),
-                            ('TRANSFORM','Transform','Align shapes and origins'),
+                            ('TRANSFORM','Transform','Legacy alignment tab'),
+                            ('FIT','Fit / Align','Fit arrangements into frames and align shapes'),
                             ('ARRAY','Array','Repeat and fit selected shapes'),
                             ('LIBRARY','Shape Library','Reuse your saved shapes'),
                             ('SETTINGS','Settings','Shortcuts and color themes')])
 
     @classmethod
     def description(cls,context,properties):
-        return {'TOOLS':'Shape Builder','TRANSFORM':'Transform — align shapes and origins',
+        return {'TOOLS':'Shape Builder','TRANSFORM':'Fit / Align', 'FIT':'Fit / Align — fit arrangements and balance gaps',
                 'ARRAY':'Array — repeat and fit shapes','LIBRARY':'Shape Library — saved shapes',
                 'SETTINGS':'Settings — shortcuts and colors'}.get(properties.tab,'harhtools')
 
     def execute(self,context):
-        context.window_manager.harhtools_panel_tab='TOOLS' if self.tab=='LIBRARY' else self.tab
+        context.window_manager.harhtools_panel_tab={'LIBRARY':'TOOLS','TRANSFORM':'FIT'}.get(self.tab,self.tab)
         array_tool.set_tab_active(context,self.tab=='ARRAY')
         if context.area:context.area.tag_redraw()
         return {'FINISHED'}
@@ -304,10 +305,11 @@ class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
     def draw(self, context):
         tab=context.window_manager.harhtools_panel_tab
         if tab=='LIBRARY':tab='TOOLS'  # Older saved scripts still open this page.
+        if tab=='TRANSFORM':tab='FIT'
         row=self.layout.row()
         rail=row.column(align=False);rail.ui_units_x=1.6
         tool_rail=rail.column(align=False);tool_rail.scale_y=1.3
-        for key,icon in [('TOOLS','shape'),('TRANSFORM','align'),('ARRAY','array')]:
+        for key,icon in [('TOOLS','shape'),('FIT','bounds'),('ARRAY','array')]:
             tool_rail.operator('view3d.harhtools_panel_tab',text='',icon_value=icons.icon(icon),depress=tab==key).tab=key
             tool_rail.separator(factor=.2)
         content=row.column()
@@ -322,8 +324,9 @@ class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
             update_box.prop(context.window_manager,'harhtools_live_reload_enabled')
             update_box.label(text=live_reload.status())
             shortcuts.draw_shortcuts(content,context,compact=True)
-        elif tab=='TRANSFORM':
-            content.label(text='Transform')
+        elif tab=='FIT':
+            content.label(text='Fit / Align')
+            fit_tool.draw_panel(content,context)
             from . import display_units
             if context.active_object:
                 content.label(text='Selected object size')
@@ -394,7 +397,7 @@ def draw_center_box(layout,context):
 def register_panel_tab():
     if not hasattr(bpy.types.WindowManager,'harhtools_panel_tab'):
         bpy.types.WindowManager.harhtools_panel_tab=EnumProperty(
-            name='harhtools Tab',items=[('TOOLS','Shape Builder',''),('TRANSFORM','Transform',''),
+            name='harhtools Tab',items=[('TOOLS','Shape Builder',''),('TRANSFORM','Transform',''),('FIT','Fit / Align',''),
                                       ('ARRAY','Array',''),('LIBRARY','Shape Library',''),('SETTINGS','Settings','')],
             default='TOOLS',options={'SKIP_SAVE'})
     previous=getattr(bpy.types,'VIEW3D_OT_harhtools_panel_tab',None)
