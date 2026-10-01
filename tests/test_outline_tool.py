@@ -5,12 +5,12 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import bpy
-from mathutils import Vector
+from mathutils import Vector, Matrix, Euler
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import extension as ext
-from extension import outline_tool as ot, outline_geometry as og
+from extension import outline_tool as ot, outline_geometry as og, outline_snap as osnap
 
 ARTIFACTS = ROOT / 'tests' / '_artifacts'
 ARTIFACTS.mkdir(exist_ok=True)
@@ -113,6 +113,58 @@ except ValueError as exc: assert 'changed' in str(exc)
 else: raise AssertionError('Source changes must be rejected')
 assert set(bpy.data.objects) == old_objects
 checks.append('changed source cannot commit a stale preview')
+
+# Coordinates stay planar under a shared affine transform even when each
+# object's center rounds differently in Blender's float32 Vector interface.
+far_matrix = (Matrix.Translation((1234.567, -876.543, 987.654))
+              @ Euler((.71, -.48, .93)).to_matrix().to_4x4()
+              @ Matrix.Diagonal((1.6, .72, 1.3, 1.0)))
+far_left = square('Far tilted left'); far_right = square('Far tilted right')
+for obj, shift in ((far_left, -4), (far_right, 4)):
+    for p in obj.data.splines[0].points:
+        p.co.x += shift
+    obj.matrix_world = far_matrix
+select(far_left, far_right)
+far_sources, far_prepared = ot.prepare_selection(bpy.context)
+assert len(far_prepared) == 2
+left_owner = far_sources.index(far_left); right_owner = far_sources.index(far_right)
+checks.append('translated tilted nonuniformly scaled objects keep their shared plane')
+
+def far_world(point):
+    return og._world_point(far_left.matrix_world, point)
+
+# Probe near an edge, not merely at the center: casting world positions back
+# to float32 can move either probe across that edge at this translation.
+assert ot.source_owners_at(far_world((-3.000002, 0, 0)), far_prepared, inside=True) == {left_owner}
+assert ot.source_owners_at(far_world((-2.999998, 0, 0)), far_prepared, inside=True) == set()
+assert ot.source_owners_at(far_world((4, 0, 0)), far_prepared, inside=True) == {right_owner}
+assert ot.source_owners_at(far_world((0, 0, 0)), far_prepared, inside=False) == {left_owner, right_owner}
+first = far_prepared[0]
+far_cache = osnap.OutlineSnapCache(bpy.context, first['_origin64'], first['_normal64'],
+    max(item['scale'] for item in far_prepared),
+    [loop for item in far_prepared for loop in item['world_loops']],
+    excluded_objects=far_sources, lazy_targets=True,
+    source_segments=[dict(segment, owner=index) for index, item in enumerate(far_prepared)
+                     for segment in item['world_segments']])
+distance, foot = far_cache.nearest_source(far_world((-3.25, 0, 0)), allowed_owners={left_owner})
+assert abs(distance - .4) < 2e-6, distance
+# The display foot is a Blender Vector; permit its final float32 storage
+# rounding while requiring the computed thickness above to remain precise.
+assert sum((a-b)**2 for a,b in zip(foot, far_world((-3, 0, 0)))) < (2e-4)**2
+checks.append('precise translated ownership and original-source snap distances agree')
+
+saved_matrix = far_right.matrix_world.copy()
+normal = far_prepared[right_owner]['_normal64']
+shifted = saved_matrix.copy()
+shifted.translation = tuple(saved_matrix.translation[i] + .01 * normal[i] for i in range(3))
+far_right.matrix_world = shifted; bpy.context.view_layer.update()
+try:
+    try: ot.prepare_selection(bpy.context)
+    except ValueError as exc: assert 'same plane' in str(exc), str(exc)
+    else: raise AssertionError('Separate real-depth planes must still be rejected')
+finally:
+    far_right.matrix_world = saved_matrix; bpy.context.view_layer.update()
+checks.append('translated multi-object selection still rejects actual depth separation')
 
 fixture = square('Mouse fixture'); prepared = [og.prepare_sources([fixture])]
 class Harness:

@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "harhtools"
-version = "1.6.2"
+version = "1.6.3"
 name = "harhtools"
 tagline = "Build editable curves, trim paths, array and align objects"
 maintainer = "harhtools"

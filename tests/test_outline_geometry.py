@@ -176,6 +176,68 @@ check_width(prepared,result,.12,prepared['tolerance']*1.1)
 assert abs(prepared['normal'].dot(Vector((transform.to_3x3().inverted().transposed()@Vector((0,0,1))).normalized())))>1-1e-6
 REPORTS.append({'case':'rotated nonuniform Bezier scale uses uniform world-unit width'})
 
+# Regression: dense flat sources at workshop translations used to fail the
+# plane check because thousands of float32 Vector additions drifted the mean.
+# These portable fixtures cover every source path, baked float32 coordinates,
+# and a large translation without raising the geometric tolerance.
+def source_snapshot(obj):
+    if obj.type=='MESH':
+        coordinates=tuple(tuple(p.co) for p in obj.data.vertices)
+    else:
+        coordinates=tuple(tuple(v) for spline in obj.data.splines for p in
+                          (spline.bezier_points if spline.type=='BEZIER' else spline.points)
+                          for v in ((p.co,p.handle_left,p.handle_right) if spline.type=='BEZIER' else (p.co,)))
+    return tuple(tuple(row) for row in obj.matrix_world),coordinates
+
+def plane_error(prepared):
+    origin=prepared['_origin64'];normal=prepared['_normal64']
+    return max(abs(math.fsum((point[i]-origin[i])*normal[i] for i in range(3)))
+               for segment in prepared['world_segments'] for point in segment['cp'])
+
+dense_loop=[(2*math.cos(i*math.tau/1128),2*math.sin(i*math.tau/1128)) for i in range(1128)]
+workshop_matrix=Matrix.Translation((.18,17.999989,-23.000017))@Euler((.6,.7,.8)).to_matrix().to_4x4()@Matrix.Diagonal((1.7,.4,1,1))
+dense_mesh=poly('Dense rotated translated mesh',[dense_loop],workshop_matrix,mesh=True)
+dense_poly=poly('Dense rotated translated POLY',[dense_loop],workshop_matrix)
+saved_style=poly('Dense unit-transform tilted workshop mesh',[dense_loop],mesh=True)
+local_rotation=Euler((.002,math.pi/2-.0001,.0003)).to_matrix()
+for vertex in saved_style.data.vertices:vertex.co=local_rotation@vertex.co
+saved_style.location=(.18,17.999989,-23.000017)
+baked=poly('Dense baked float32 mesh',[dense_loop],mesh=True)
+for vertex in baked.data.vertices:vertex.co=workshop_matrix@vertex.co
+far=poly('Dense mesh large translation',[dense_loop],Matrix.Translation((1000,-2000,3000))@workshop_matrix.to_3x3().to_4x4(),mesh=True)
+data=bpy.data.curves.new('Dense translated Bezier','CURVE');data.dimensions='2D'
+spline=data.splines.new('BEZIER');spline.bezier_points.add(63);spline.use_cyclic_u=True
+for i,p in enumerate(spline.bezier_points):
+    angle=i*math.tau/64;k=4/3*math.tan(math.pi/128)
+    co=Vector((2*math.cos(angle),2*math.sin(angle),0));tangent=Vector((-2*math.sin(angle),2*math.cos(angle),0))
+    p.handle_left_type=p.handle_right_type='FREE';p.co=co;p.handle_left=co-k*tangent;p.handle_right=co+k*tangent
+dense_bezier=bpy.data.objects.new('Dense rotated translated Bezier',data);bpy.context.collection.objects.link(dense_bezier)
+dense_bezier.matrix_world=workshop_matrix;bpy.context.view_layer.update()
+for source in [saved_style,dense_mesh,dense_poly,dense_bezier,baked,far]:
+    before=source_snapshot(source);prepared=og.prepare_sources([source])
+    residual=plane_error(prepared);limit=max(prepared['scale']*2e-6,1e-7)
+    assert residual<limit,(source.name,residual,limit)
+    assert all(isinstance(prepared[key],Vector) for key in ('origin','u','v','normal'))
+    # Projected world loops must remain in the precise source plane even when
+    # the Blender output matrix cannot represent a large origin exactly.
+    assert max(abs(math.fsum((p[i]-prepared['_origin64'][i])*prepared['_normal64'][i] for i in range(3)))
+               for loop in prepared['world_loops'] for p in loop)<limit
+    result=og.build_outline(prepared,.05,direction='OUTWARD')
+    expected=abs(sum(og._area(loop) for loop in result['border_loops']));filled=evaluated_area(result)
+    assert abs(filled-expected)/expected<1e-4,(source.name,filled,expected)
+    assert source_snapshot(source)==before
+    REPORTS.append({'case':source.name+' remains planar and unchanged','plane_residual':residual,'unchanged_limit':limit,'evaluated_area':filled})
+
+# Truly warped source geometry must still be rejected, including handles that
+# leave a plane while the Bezier anchors themselves remain planar.
+dense_mesh.data.vertices[0].co.z=.02
+before=source_snapshot(dense_mesh);rejects(lambda:og.prepare_sources([dense_mesh]),'one plane')
+assert source_snapshot(dense_mesh)==before
+dense_bezier.data.splines[0].bezier_points[0].handle_right.z=.02
+before=source_snapshot(dense_bezier);rejects(lambda:og.prepare_sources([dense_bezier]),'one plane')
+assert source_snapshot(dense_bezier)==before
+REPORTS.append({'case':'dense transformed warped vertex and off-plane Bezier handle remain rejected without source edits'})
+
 arch_spans=[cg.line((-1,0,0),(1,0,0)),cg.line((1,0,0),(1,1,0))]
 for cx,a,b in [(-1,0,math.pi/3),(1,2*math.pi/3,math.pi)]:
     k=4/3*math.tan((b-a)/4)

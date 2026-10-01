@@ -29,9 +29,9 @@ a Blender script directly so a failed assertion produces a failing exit code.
 | `test_pen_contacts.py` | Interior tangent contacts, neighboring crossings, and safe rejection of partial duplicate overlaps. |
 | `test_builder_curve_output.py` | Native filled area of the Gothic circle construction, both viewing directions, translated coordinates, tiny junction repair, and retained small geometry. |
 | `test_mocked_gpu_caches.py` | Overlay coverage and cache reuse/invalidation using fake GPU/font APIs and real projection math. |
-| `test_outline_geometry.py` | Even-width offsets, holes, rotated/nonuniform sources, concave corners, Gothic curves and converted mesh, bounded simplification, native hollow fill, and rejection of collapses. |
+| `test_outline_geometry.py` | Even-width offsets, holes, rotated/nonuniform and distant sources, dense plane precision, genuine nonplanarity, Gothic curves and converted mesh, bounded simplification, native hollow fill, and rejection of collapses. |
 | `test_outline_snap.py` | Native Bezier/Poly/mesh targets, dense source indexing, ownership, exact closest points, perspective projection, coplanarity, visibility, stale targets, lazy initialization, and cache reuse. |
-| `test_outline_tool.py` | Actual operator commits, separate outputs, source preservation, rollback, optional snapping, mouse controls, and registration cleanup. |
+| `test_outline_tool.py` | Actual operator commits, separate outputs, source preservation, rollback, optional snapping, translated plane selection/ownership, mouse controls, and registration cleanup. |
 | `test_outline_interaction.py` | Actual modal/RNA methods: idle hover, coalesced drag/slider updates, timer cadence, final release/Enter values, cached errors, Escape over sidebar, timer cleanup, and dense source ownership indexing. |
 | `test_outline_gpu.py` | Actual outline draw callbacks with mocked GPU/BLF: transformed boundaries, cache reuse, measurement feedback, callback guards and state restoration after failures. |
 | `test_live_reload.py` | Idle guards, debounce, version changes, settings restoration, and failed-reload rollback. |

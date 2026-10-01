@@ -7,7 +7,7 @@
       "id": "harhtools",
       "name": "harhtools",
       "tagline": "Build editable curves, trim paths, array and align objects",
-      "version": "1.6.2",
+      "version": "1.6.3",
       "type": "add-on",
       "maintainer": "harhtools",
       "license": [
@@ -22,9 +22,9 @@
         "Object",
         "Add Curve"
       ],
-      "archive_url": "./harhtools-1.6.2.zip",
-      "archive_size": 145925,
-      "archive_hash": "sha256:75c5ee4ba530541ea8bbd2673b74d90d1cb9600837f80e2eb8eba5ee3e68b9c1"
+      "archive_url": "./harhtools-1.6.3.zip",
+      "archive_size": 146526,
+      "archive_hash": "sha256:bb0fe36467c0651c280a39b7556711f2b91a346cc29fff6793c4bc823052f7dc"
     }
   ]
 }

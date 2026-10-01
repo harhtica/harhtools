@@ -1,5 +1,25 @@
 # Release verification
 
+## Version 1.6.3
+
+- Reproduced the reported flatness error on the newly saved, translated Gothic
+  mesh. Its true plane deviation was about 7.53e-9 world units, but accumulating
+  world positions in a float32 Vector produced a false deviation of 1.21e-5,
+  exceeding the existing 5.03e-6 threshold.
+- World transforms, centroid accumulation, plane construction and source
+  projection now use Python double precision. The flatness tolerance is unchanged;
+  genuine depth is still rejected, and source geometry is not flattened or moved.
+- The current saved shape now creates native hollow borders at Outside 0.05 m
+  and 0.14 m. Each passed a 14,400-point fill coverage comparison and source
+  preservation checks. Rendered results were visually inspected without saving
+  the user's scene.
+- Geometry regressions include dense mesh, Poly and Bezier boundaries, rotated
+  nonuniform transforms, distant positions, float32 baked transforms and genuinely
+  warped vertices or off-plane handles. Selection, ownership and source snapping
+  retain the precise plane through the operator instead of casting it too early.
+- All 16 regression suites passed in isolated Blender 5.2 processes, including
+  28 geometry checks, 15 operator checks and 13 interaction checks.
+
 ## Version 1.6.2
 
 - Reproduced Make Outline rejecting the saved Gothic mesh at Outside 0.14 m.

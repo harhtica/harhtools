@@ -22,6 +22,19 @@ def _cross(a,b):return a[0]*b[1]-a[1]*b[0]
 def _dot(a,b):return a[0]*b[0]+a[1]*b[1]
 def _area(loop):return sum(_cross(a,b) for a,b in zip(loop,loop[1:]+loop[:1]))*.5
 
+def _sub3(a,b):return tuple(a[i]-b[i] for i in range(3))
+def _dot3(a,b):return math.fsum(a[i]*b[i] for i in range(3))
+def _cross3(a,b):return (a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0])
+def _unit3(a):
+    length=math.sqrt(_dot3(a,a))
+    return tuple(value/length for value in a)
+
+def _world_point(matrix,point):
+    # Blender controls and matrices are float32, but accumulating transformed
+    # world positions in a Vector introduces additional rounding. Keep all
+    # preparation arithmetic double until the output datablock boundary.
+    return tuple(math.fsum([matrix[i][j]*point[j] for j in range(3)]+[matrix[i][3]]) for i in range(3))
+
 def _point_segment_sq(p,a,b):
     d=_sub(b,a);den=_dot(d,d)
     t=max(0.0,min(1.0,_dot(_sub(p,a),d)/den)) if den>0 else 0.0
@@ -160,7 +173,7 @@ def _mesh_loops(obj):
             index,nxt=choices[0];pending.remove(index);indices.append(current);current=nxt
             if current==start:break
         if current!=start or len(indices)<3:raise ValueError(f'{obj.name}: invalid closed mesh boundary.')
-        loops.append([tuple(obj.matrix_world@mesh.vertices[i].co) for i in indices])
+        loops.append([_world_point(obj.matrix_world,mesh.vertices[i].co) for i in indices])
     return loops
 
 def prepare_sources(objects,*,tolerance=None):
@@ -187,27 +200,30 @@ def prepare_sources(objects,*,tolerance=None):
                     rows=[]
                     for i,a in enumerate(points):
                         b=points[(i+1)%len(points)]
-                        rows.append({'kind':'BEZIER','cp':tuple(tuple(obj.matrix_world@p) for p in (a.co,a.handle_right,b.handle_left,b.co))})
+                        rows.append({'kind':'BEZIER','cp':tuple(_world_point(obj.matrix_world,p) for p in (a.co,a.handle_right,b.handle_left,b.co))})
                     segment_loops.append(rows)
                 elif spline.type=='POLY':
-                    loop=[tuple(obj.matrix_world@p.co.xyz) for p in spline.points]
+                    loop=[_world_point(obj.matrix_world,p.co) for p in spline.points]
                     if len(loop)<3:raise ValueError(f'{obj.name}: the spline has too few points.')
                     segment_loops.append([{'kind':'LINE','cp':curve_geometry.line(a,b)} for a,b in zip(loop,loop[1:]+loop[:1])])
                 else:raise ValueError(f'{obj.name}: convert NURBS to Bezier before making an outline. No automatic flattening was performed.')
         if len(segment_loops)>before:names.append(obj.name)
     if not segment_loops:raise ValueError('Select a closed curve or a planar mesh boundary.')
     segments=[s for loop in segment_loops for s in loop]
-    points=[Vector(p) for s in segments for p in s['cp']]
-    origin=sum(points,Vector())/len(points)
-    centered=[p-origin for p in points];furthest=max(centered,key=lambda p:p.length_squared)
-    scale=furthest.length
+    points=[p for s in segments for p in s['cp']]
+    # A dense, translated flat boundary can drift off its own plane when its
+    # centroid is accumulated in float32. Fit and project in centered double
+    # coordinates; do not loosen the tolerance to hide that arithmetic error.
+    origin64=tuple(math.fsum(p[i] for p in points)/len(points) for i in range(3))
+    centered=[_sub3(p,origin64) for p in points];furthest=max(centered,key=lambda p:_dot3(p,p))
+    scale=math.sqrt(_dot3(furthest,furthest))
     if scale<1e-9:raise ValueError('The selected outline has zero size.')
-    u=furthest.normalized();cross=max((u.cross(p) for p in centered),key=lambda p:p.length_squared)
-    if cross.length<scale*1e-9:raise ValueError('The selected outline has zero area.')
-    normal=cross.normalized()
-    if normal[max(range(3),key=lambda i:abs(normal[i]))]<0:normal.negate()
-    v=normal.cross(u).normalized()
-    if any(abs(p.dot(normal))>max(scale*2e-6,1e-7) for p in centered):
+    u64=_unit3(furthest);cross=max((_cross3(u64,p) for p in centered),key=lambda p:_dot3(p,p))
+    if math.sqrt(_dot3(cross,cross))<scale*1e-9:raise ValueError('The selected outline has zero area.')
+    normal64=_unit3(cross)
+    if normal64[max(range(3),key=lambda i:abs(normal64[i]))]<0:normal64=tuple(-value for value in normal64)
+    v64=_unit3(_cross3(normal64,u64))
+    if any(abs(_dot3(p,normal64))>max(scale*2e-6,1e-7) for p in centered):
         raise ValueError('Make Outline requires boundaries in one plane; depth and nonplanar geometry are not supported.')
     tolerance=max(scale*1e-5,1e-7) if tolerance is None else float(tolerance)
     if not math.isfinite(tolerance) or tolerance<=0:raise ValueError('Sampling tolerance must be positive and finite.')
@@ -218,7 +234,7 @@ def prepare_sources(objects,*,tolerance=None):
         for segment in segment_loop:
             cp=[]
             for point in segment['cp']:
-                delta=Vector(point)-origin;cp.append((delta.dot(u),delta.dot(v)))
+                delta=_sub3(point,origin64);cp.append((_dot3(delta,u64),_dot3(delta,v64)))
             sampled=[cp[0],cp[3]] if segment['kind']=='LINE' else _flatten(tuple(cp),tolerance)
             loop.extend(sampled[:-1])
         loop=_clean(loop,epsilon)
@@ -232,13 +248,15 @@ def prepare_sources(objects,*,tolerance=None):
         depth=sum(_contains(loop[0],other) for j,other in enumerate(loops) if j!=i)
         depths.append(depth)
         if (_area(loop)>0)!=(depth%2==0):loop.reverse()
+    origin,u,v,normal=map(Vector,(origin64,u64,v64,normal64))
     matrix=Matrix.Identity(4)
     for i,axis in enumerate((u,v,normal)):
         for j in range(3):matrix[j][i]=axis[j]
     matrix.translation=origin
-    world_loops=[[tuple(origin+u*x+v*y) for x,y in loop] for loop in loops]
+    world_loops=[[tuple(math.fsum((origin64[i],u64[i]*x,v64[i]*y)) for i in range(3)) for x,y in loop] for loop in loops]
     return {'origin':origin,'u':u,'v':v,'normal':normal,'scale':scale,'loops':loops,
             'world_loops':world_loops,'world_segments':segments,'source_names':names,
+            '_origin64':origin64,'_u64':u64,'_v64':v64,'_normal64':normal64,
             'tolerance':tolerance,'epsilon':epsilon,'depths':depths,'matrix_world':matrix}
 
 def _offset_loop(loop,distance,tolerance,epsilon):

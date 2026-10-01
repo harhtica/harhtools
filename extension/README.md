@@ -1,11 +1,11 @@
-# harhtools 1.6.2
+# harhtools 1.6.3
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.6.2.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.6.3.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -92,6 +92,8 @@ Select closed curves or flat mesh shapes in **Object Mode**, then click
 **Make Outline** beneath Shape Builder. Set **Thickness** numerically or drag
 inside the shape to preview an inset. Choose **Outside** to drag an outward border.
 **Enter** creates the result; **Esc / right-click** cancels without changing geometry.
+Flat boundaries can be rotated or placed away from the world origin. Plane
+validation uses double-precision calculations and does not flatten source data.
 
 Enable **Snap to Geometry**, or press **S** while the preview is active. Drag near
 an unselected visible curve or mesh edge on the same plane; the target determines

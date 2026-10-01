@@ -64,10 +64,15 @@ def prepare_selection(context):
         raise ValueError('Select a closed curve or planar filled shape first.')
     prepared = [outline_geometry.prepare_sources([obj]) for obj in objects]
     first = prepared[0]
-    normal = Vector(first['normal']); origin = Vector(first['origin'])
+    normal = first.get('_normal64', first['normal'])
+    origin = first.get('_origin64', first['origin'])
     tolerance = max(item['scale'] for item in prepared) * 1e-5
     for item in prepared[1:]:
-        if abs(normal.dot(Vector(item['normal']))) < 1 - 1e-6 or abs((Vector(item['origin']) - origin).dot(normal)) > tolerance:
+        other_normal = item.get('_normal64', item['normal'])
+        other_origin = item.get('_origin64', item['origin'])
+        alignment = math.fsum(a * b for a, b in zip(normal, other_normal))
+        separation = math.fsum((a - b) * n for a, b, n in zip(other_origin, origin, normal))
+        if abs(alignment) < 1 - 1e-6 or abs(separation) > tolerance:
             raise ValueError('Selected outlines must lie on the same plane.')
     return objects, prepared
 
@@ -181,8 +186,11 @@ def _inside_prepared(xy, item):
 def source_owners_at(point, prepared, *, inside):
     owners = set()
     for index, item in enumerate(prepared):
-        delta = Vector(point) - Vector(item['origin'])
-        xy = (delta.dot(Vector(item['u'])), delta.dot(Vector(item['v'])))
+        origin = item.get('_origin64', item['origin'])
+        delta = tuple(float(p) - o for p, o in zip(point, origin))
+        u, v = item.get('_u64', item['u']), item.get('_v64', item['v'])
+        xy = (math.fsum(a * b for a, b in zip(delta, u)),
+              math.fsum(a * b for a, b in zip(delta, v)))
         if _inside_prepared(xy, item) == inside:
             owners.add(index)
     return owners
@@ -238,7 +246,8 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             first = self._prepared[0]
             self._origin = Vector(first['origin']); self._normal = Vector(first['normal'])
             self._world_loops = [list(loop) for item in self._prepared for loop in item['world_loops']]
-            self._snap = outline_snap.OutlineSnapCache(context, self._origin, self._normal,
+            self._snap = outline_snap.OutlineSnapCache(context,
+                first.get('_origin64', first['origin']), first.get('_normal64', first['normal']),
                 max(item['scale'] for item in self._prepared), self._world_loops,
                 excluded_objects=self._sources, lazy_targets=not cfg.snap_geometry,
                 source_segments=[dict(segment, owner=index) for index, item in enumerate(self._prepared)

@@ -46,6 +46,7 @@ class Manager:
 class FakeSnap:
     def __init__(self, *args, **kwargs):
         self.queries = 0
+        self.origin, self.normal = tuple(args[1]), tuple(args[2])
         self.boundaries = args[4]
     def query(self, *args, **kwargs):
         self.queries += 1
@@ -240,6 +241,22 @@ try:
         assert bpy.app.driver_namespace.get(ot.STATE_KEY) is None
         assert abs(cfg.thickness - .1) < 1e-6
         CHECKS.append('Escape over sidebar cancels queued work, removes timer/handlers and restores settings')
+
+        source.matrix_world = (Matrix.Translation((1234.567, -876.543, 987.654))
+            @ Euler((.71, -.48, .93)).to_matrix().to_4x4()
+            @ Matrix.Diagonal((1.6, .72, 1.3, 1.0)))
+        # Asymmetric local center ensures the fitted origin is not exactly
+        # representable by a float32 Vector, unlike the object's translation.
+        for p in spline.points:
+            p.co.x += .123; p.co.y += .271
+        bpy.context.view_layer.update()
+        h = invoke()
+        first = h._prepared[0]
+        assert tuple(first['origin']) != first['_origin64']
+        assert h._snap.origin == first['_origin64']
+        assert h._snap.normal == first['_normal64']
+        h.finish(context, cancel=True)
+        CHECKS.append('actual invoke passes precise fitted origin and normal to the snapping cache')
 finally:
     state = bpy.app.driver_namespace.get(ot.STATE_KEY)
     if state is not None:
