@@ -16,7 +16,7 @@ import bpy
 from mathutils import Vector
 from bpy.props import EnumProperty
 import time
-from . import icons, shortcuts, array_tool, shape_library
+from . import icons, shortcuts, array_tool, shape_library, outline_tool, live_reload
 
 
 _NOTICE_KEY = 'arch_tools_center_notification'
@@ -315,6 +315,10 @@ class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
             array_tool.draw_panel(content,context)
         elif tab=='SETTINGS':
             content.label(text='Settings')
+            update_box=content.box()
+            update_box.label(text='Harhtools '+context.window_manager.harhtools_live_reload_version)
+            update_box.prop(context.window_manager,'harhtools_live_reload_enabled')
+            update_box.label(text=live_reload.status())
             shortcuts.draw_shortcuts(content,context,compact=True)
         elif tab=='TRANSFORM':
             content.label(text='Transform')
@@ -323,6 +327,9 @@ class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
             for index,section in enumerate(shortcuts.section_order(shortcuts.settings(context),'TOOLS')):
                 if index:content.separator(factor=.4)
                 {'BUILDER':draw_builder_box,'LIBRARY':shape_library.draw_panel}[section](content,context)
+                if section=='BUILDER':
+                    content.separator(factor=.4)
+                    outline_tool.draw_panel(content,context)
         # Separate footer below the entire content, so Settings stays at the
         # bottom even when the Library or Settings page is taller than Tools.
         self.layout.separator(factor=.45)
@@ -349,7 +356,7 @@ def draw_builder_box(layout,context):
         box.label(text='Alt-click/drag removes touched fills.')
     box.label(text='Enter creates result; Esc cancels.')
     row=box.row(align=False);row.scale_y=shortcuts.CONTROL_HEIGHT
-    row.enabled=not bool(bpy.app.driver_namespace.get(array_tool.STATE_KEY))
+    row.enabled=not bool(bpy.app.driver_namespace.get(array_tool.STATE_KEY) or bpy.app.driver_namespace.get(outline_tool.STATE_KEY))
     row.operator('view3d.arch_shape_builder',text='On',depress=active)
     mode=('REMOVE' if state._alt else 'ADD') if state else context.window_manager.arch_shape_builder_mode
     row=box.split(factor=.5,align=False);row.scale_y=shortcuts.CONTROL_HEIGHT;row.enabled=active

@@ -1,5 +1,37 @@
 # Release verification
 
+## Version 1.6.0
+
+Validated with Blender 5.2 on Windows in isolated background processes.
+
+- Outline geometry covers even inward/outward widths, holes, disjoint shapes,
+  concave corners, arbitrary rotation, nonuniform source transforms and clear
+  rejection of crossing or collapsed boundaries.
+- A pointed Gothic arch, trefoil and 12-circle cusped quatrefoil produce borders
+  at width 0.05. Generated geometry was rendered as a diagnostic sheet and inspected.
+  Results are POLY curves; original Bezier sources remain unchanged.
+- Real operator commits retain materials and all source collections. Multiple
+  selected objects stay independent. Stale-source and batch-failure paths roll
+  back without partial results, and commits never write Shape Library presets.
+- Snapping tests cover native Bezier, Poly and mesh targets, wrong-side rejection,
+  overlapping source ownership, transformed planes, hidden/locked geometry and
+  target changes. Cached query timing is a CPU benchmark, not viewport FPS.
+- Modal method tests cover numeric/drag width, optional geometry snapping, final
+  release position, and the S toggle. These do not replace testing the actual
+  mouse in an interactive Blender viewport.
+- Outline draw callbacks passed mocked GPU/BLF checks for transformed boundaries,
+  cache reuse/invalidation, error feedback and GPU state restoration after failure.
+- The one-time reload helper, stable-file checks, busy-mode guards, compatible
+  setting preservation, package replacement and failed-registration rollback
+  passed. The watcher remains usable after scene loading and Undo.
+- Tests also cover extension registration/unregistration, and the existing
+  Shape Builder ownership, manual-only library and editable-curve regressions.
+
+The installed user scene was not saved or reverted by this verification. A running
+pre-1.6.0 session needs the Scripting-tab helper or one restart to activate the
+watcher. New offset splines approximate curves with a recorded sampling bound;
+very sharp or narrow features can require a smaller thickness.
+
 ## Version 1.5.1
 
 Validated with Blender 5.2 on Windows in separate background processes.

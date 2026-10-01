@@ -28,6 +28,13 @@ a Blender script directly so a failed assertion produces a failing exit code.
 | `test_pen_curves.py` | Editable cubic output, source fidelity, holes, open paths, transformed input, and selected Curve Edit Mode segments. |
 | `test_pen_contacts.py` | Interior tangent contacts, neighboring crossings, and safe rejection of partial duplicate overlaps. |
 | `test_mocked_gpu_caches.py` | Overlay coverage and cache reuse/invalidation using fake GPU/font APIs and real projection math. |
+| `test_outline_geometry.py` | Even-width offsets, holes, rotated/nonuniform sources, concave corners, Gothic curves, sampling bounds, and rejection of collapses. |
+| `test_outline_snap.py` | Native Bezier/Poly/mesh targets, source ownership, exact closest points, coplanarity, visibility, stale targets, and projection-cache performance. |
+| `test_outline_tool.py` | Actual operator commits, separate outputs, source preservation, rollback, optional snapping, mouse controls, and registration cleanup. |
+| `test_outline_gpu.py` | Actual outline draw callbacks with mocked GPU/BLF: transformed boundaries, cache reuse, measurement feedback, callback guards and state restoration after failures. |
+| `test_live_reload.py` | Idle guards, debounce, version changes, settings restoration, and failed-reload rollback. |
+| `test_reload_bootstrap.py` | One-time Scripting helper activates the watcher in an older running package without touching geometry. |
+| `test_live_reload_integration.py` | Real Blender package replacement and failure recovery in isolated temporary installations. |
 
 These tests validate behavior and cache allocation. They do not measure actual
 GPU performance or replace a visual check in an interactive Blender viewport.

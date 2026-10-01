@@ -258,7 +258,8 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
     def poll(cls,context):
         return (context.area is not None and context.area.type=='VIEW_3D' and context.mode=='OBJECT'
                 and preview_state() is None
-                and not bpy.app.driver_namespace.get('arch_tools_shape_builder'))
+                and not bpy.app.driver_namespace.get('arch_tools_shape_builder')
+                and not bpy.app.driver_namespace.get('harhtools_outline_preview'))
 
     def invoke(self,context,event):
         global _tab_active,_last_context

@@ -1,11 +1,11 @@
-# harhtools 1.5.1
+# harhtools 1.6.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.5.1.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.6.0.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -78,6 +78,47 @@ implemented. It does not add Illustrator's pen-drawing tool. Blender's native cu
 remain editable. Tested headlessly in Blender 5.2; live mouse/GPU interaction has not been
 verified in the user's desktop session. Minimum-version metadata is retained from 1.4.0,
 but this local update's validation was performed on 5.2 only.
+
+## Make Outline
+
+Select closed curves or flat mesh shapes in **Object Mode**, then click
+**Make Outline** beneath Shape Builder. Set **Thickness** numerically or drag
+inside the shape to preview an inset. Choose **Outside** to drag an outward border.
+**Enter** creates the result; **Esc / right-click** cancels without changing geometry.
+
+Enable **Snap to Geometry**, or press **S** while the preview is active. Drag near
+an unselected visible curve or mesh edge on the same plane; the target determines
+the even border thickness. A target on the wrong side of a shape cannot set that
+shape's inset/outset. Hidden or locked guides and out-of-plane geometry are excluded.
+Finish and restart the tool after editing snap-target geometry.
+
+Each selected object receives an independent outline. Original shapes are kept
+and hidden by default so their filled centers do not obscure the new border.
+Uncheck **Hide Original Shapes** to keep them visible. Outputs stay in the sources'
+collections and inherit their materials. No library preset is saved automatically.
+
+The result is a filled, editable **POLY Curve** with closed border splines. Bezier
+inputs are adaptively sampled with a recorded world-space error bound; the new
+offset is not an exact Bezier curve. Original Bezier data stays intact. The preview
+uses lighter sampling; confirmation rebuilds at final precision. Opening corners
+use circular joins to avoid long spikes. Widths that collapse tips, cross boundaries,
+or merge holes are rejected, with the original shape preserved. NURBS, open paths,
+nonplanar shapes and ambiguous intersecting source loops are not supported.
+
+## Reload installed updates without reverting the file
+
+From 1.6.0 onward, **Settings > Reload Installed Updates** watches the local extension
+version. After a newer version is installed and its files settle, Harhtools reloads
+only its own code when Blender is idle in Object Mode. Current geometry, selection,
+the open file and compatible tool settings remain in place. Active tools, animation,
+rendering and editing postpone the reload. Failed updates restore the previous code.
+The loaded version and pending/error status appear in Harhtools Settings.
+
+An already running older version needs one initial activation. Open the repository's
+`tools/reload_harhtools.py` in Blender's Scripting Text Editor and run it after installing
+1.6.0, or restart Blender once. The helper targets only the enabled Harhtools extension.
+It does not save or revert the blend file or reload other add-ons. Older Blender versions
+without the active-modal inspection API safely request a restart instead.
 
 ## Transform / Align
 

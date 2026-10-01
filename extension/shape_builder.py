@@ -491,6 +491,7 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
     def poll(cls,context):
         return (context.area is not None and context.area.type=='VIEW_3D'
                 and not bpy.app.driver_namespace.get('harhtools_array_preview')
+                and not bpy.app.driver_namespace.get('harhtools_outline_preview')
                 and context.mode in {'OBJECT','EDIT_MESH','EDIT_CURVE'}
                 and any(o.type in {'MESH','CURVE'} for o in
                         (context.objects_in_mode_unique_data if context.mode in {'EDIT_MESH','EDIT_CURVE'} else context.selected_objects)))

@@ -1,10 +1,27 @@
 # harhtools
 
 A Blender extension with an editable-curve Shape Builder, reusable shape library,
-arrays, and object alignment tools.
+outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.5.1
+## Version 1.6.0
+
+- **Make Outline** creates independent, even-width borders around selected closed
+  curves and planar meshes. Drag to adjust or enter a thickness, then press Enter.
+- Optional **Snap to Geometry** uses nearby coplanar curves or mesh edges to set
+  that thickness. Press S to toggle it during the preview.
+- Original shapes remain recoverable. Offset results are filled POLY curves with
+  adaptive sampling; invalid or collapsing widths are rejected before committing.
+- **Reload Installed Updates** reloads only Harhtools while Blender is idle,
+  preserving the current scene and compatible settings. A running older version
+  needs the one-time [Scripting-tab helper](tools/reload_harhtools.py) or a restart.
+
+[Download 1.6.0](https://harhtica.github.io/harhtools/harhtools-1.6.0.zip), or use
+the Blender repository below. Reverting a blend file does not reload Python code.
+See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
+and [regression tests](tests/README.md).
+
+## Included from 1.5.1
 
 - Separate clicks create separate fills. A continuous drag merges only touched
   regions and fills; unrelated fills retain their own boundaries and objects.
@@ -16,11 +33,6 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   curve Edit Mode, and optional mesh output. Original curve guides remain intact.
 - Curve presets retain their handles. Arrays, snapping and alignment controls,
   reusable themes, and optional cutting of mesh guides are also included.
-
-[Download 1.5.1](https://harhtica.github.io/harhtools/harhtools-1.5.1.zip), or use
-the Blender repository below. Save your work and restart Blender after replacing
-an already loaded extension; reverting a blend file does not reload Python code.
-See [release verification](VERIFICATION.md) and [regression tests](tests/README.md).
 
 ## One-time installation for friends
 
@@ -58,7 +70,7 @@ bridge credentials, or external Python dependencies in the extension package.
 ## Release your next change
 
 1. Edit the Python files in `extension/`.
-2. Increase `version` in `extension/blender_manifest.toml`, for example to `1.5.2`.
+2. Increase `version` in `extension/blender_manifest.toml`, for example to `1.6.1`.
 3. Run the builder below using Python 3.11+ (Blender's bundled Python works).
 4. Test the resulting ZIP in Blender, then commit and push the source and `docs/`.
 
