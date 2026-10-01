@@ -70,10 +70,10 @@ def _membership_index(loop):
     return contains
 
 
-def _merge_triangles(vertices, faces, epsilon, boundary_side):
+def _merge_triangles(vertices, faces, epsilon, boundary_side, protected=()):
     candidates=[]
     for edge,neighbors in _edge_faces(faces).items():
-        if len(neighbors)!=2:continue
+        if len(neighbors)!=2 or edge in protected:continue
         a,b=neighbors
         boundary={}
         for face in (faces[a],faces[b]):
@@ -96,12 +96,61 @@ def _merge_triangles(vertices, faces, epsilon, boundary_side):
     return result
 
 
-def _triangulate_ring(source, offset, epsilon):
+def _corner_turns(loop):
+    return [math.atan2(geometry._cross(geometry._sub(p,loop[i-1]),geometry._sub(loop[(i+1)%len(loop)],p)),
+                       geometry._dot(geometry._sub(p,loop[i-1]),geometry._sub(loop[(i+1)%len(loop)],p)))
+            for i,p in enumerate(loop)]
+
+
+def _corners(loop):
+    turns=_corner_turns(loop)
+    # Retain obvious corners and isolated tangent discontinuities, while a
+    # regularly sampled smooth arc need not constrain every cross-strip edge.
+    return [(i,turn) for i,turn in enumerate(turns)
+            if abs(turn)>max(math.radians(.1),min(math.radians(5),
+                4*max(abs(turns[i-1]),abs(turns[(i+1)%len(turns)]))))]
+
+
+def _miter_seams(source,offset,distance,epsilon):
+    """Pair actual corners even when local offset cleanup changed vertex count.
+
+    Pair to a surviving corner on the same side, near its analytic miter. A
+    proposed seam must stay entirely in the ring and cross neither a boundary
+    nor another seam. No source or offset vertex is moved.
+    """
+    targets=_corners(offset);chosen=[];used=set();inside_a=_membership_index(source);inside_b=_membership_index(offset)
+    boundaries=[(a,b) for loop in (source,offset) for a,b in zip(loop,loop[1:]+loop[:1])]
+    for i,turn in sorted(_corners(source),key=lambda row:-abs(row[1])):
+        point=source[i];incoming=geometry._sub(point,source[i-1]);outgoing=geometry._sub(source[(i+1)%len(source)],point)
+        incoming=geometry._mul(incoming,1/math.hypot(*incoming));outgoing=geometry._mul(outgoing,1/math.hypot(*outgoing))
+        denominator=1+geometry._dot(incoming,outgoing)
+        if denominator<=1e-12:continue
+        expected=geometry._add(point,geometry._mul((-incoming[1]-outgoing[1],incoming[0]+outgoing[0]),distance/denominator))
+        candidates=sorted((math.dist(expected,offset[j]),j) for j,t in targets if t*turn>0 and j not in used)
+        for error,j in candidates:
+            if error>max(abs(distance)*4,epsilon*32):break
+            end=offset[j]
+            if math.dist(point,end)<=epsilon:continue
+            # Other boundary vertices and crossing edges cannot lie on a seam.
+            if any(geometry._point_segment_sq(q,point,end)<=epsilon*epsilon
+                   for loop in (source,offset) for q in loop if q!=point and q!=end):continue
+            if any(geometry._segment_distance_sq(point,end,a,b)<=epsilon*epsilon
+                   for a,b in boundaries if point not in (a,b) and end not in (a,b)):continue
+            if any(inside_a(geometry._add(point,geometry._mul(geometry._sub(end,point),t)))==
+                   inside_b(geometry._add(point,geometry._mul(geometry._sub(end,point),t))) for t in (.1,.5,.9)):continue
+            if any(geometry._segment_distance_sq(point,end,source[a],offset[b])<=epsilon*epsilon for a,b in chosen):continue
+            chosen.append((i,j));used.add(j);break
+    return chosen
+
+
+def _triangulate_ring(source, offset, epsilon, seams=()):
     original=source+offset;n=len(source)
     center=tuple(math.fsum(p[i] for p in original)/len(original) for i in range(2))
     scale=max(math.dist(p,center) for p in original)
     edges=[(i,(i+1)%n) for i in range(n)]
     edges.extend((n+i,n+(i+1)%len(offset)) for i in range(len(offset)))
+    boundary_edges=list(edges)
+    edges.extend((i,n+j) for i,j in seams)
     normalized=[Vector(((p[0]-center[0])/scale,(p[1]-center[1])/scale)) for p in original]
     coords,_,triangles,orig_vertices,_,_=delaunay_2d_cdt(normalized,edges,[],0,epsilon/scale,True)
     vertices=[];old_to_new={};boundary_side={}
@@ -120,8 +169,11 @@ def _triangulate_ring(source, offset, epsilon):
         triangle=list(triangle)
         center=tuple(math.fsum(vertices[v][axis] for v in triangle)/len(triangle) for axis in range(2))
         if in_source(center)!=in_offset(center):faces.append(_ccw(vertices,triangle))
-    faces=_merge_triangles(vertices,faces,epsilon,boundary_side)
-    boundary={tuple(sorted((old_to_new[a],old_to_new[b]))) for a,b in edges}
+    protected={tuple(sorted((old_to_new[i],old_to_new[n+j]))) for i,j in seams}
+    faces=_merge_triangles(vertices,faces,epsilon,boundary_side,protected)
+    if not protected <= set(_edge_faces(faces)):
+        raise ValueError('The outline mesh could not preserve a miter corner seam.')
+    boundary={tuple(sorted((old_to_new[a],old_to_new[b]))) for a,b in boundary_edges}
     return vertices,faces,boundary
 
 
@@ -149,7 +201,7 @@ def build_mesh(result):
     if len(sources)!=len(offsets) or not sources:
         raise ValueError('Each outline source needs its matching offset boundary.')
     correspondence=result.get('offset_correspondence',[None]*len(sources))
-    vertices=[];faces=[];direct=0;triangulated=0
+    vertices=[];faces=[];direct=0;triangulated=0;seam_count=0
     for index,(source,offset) in enumerate(zip(sources,offsets)):
         source=[tuple(p) for p in source];offset=[tuple(p) for p in offset]
         extent=max(max(p[axis] for p in source+offset)-min(p[axis] for p in source+offset) for axis in range(2))
@@ -167,16 +219,17 @@ def build_mesh(result):
                 except ValueError:pass
                 else:local_faces=candidate;direct+=1
         if local_faces is None:
-            local_vertices,local_faces,boundary=_triangulate_ring(source,offset,epsilon)
+            seams=_miter_seams(source,offset,result['thickness']*(1 if result['direction']=='INWARD' else -1),epsilon) if result.get('join_style')=='MITER' else []
+            local_vertices,local_faces,boundary=_triangulate_ring(source,offset,epsilon,seams)
             _validate(local_vertices,local_faces,boundary,expected_area,epsilon)
-            triangulated+=1
+            triangulated+=1;seam_count+=len(seams)
         base=len(vertices);vertices.extend((x,y,0.0) for x,y in local_vertices)
         faces.extend(tuple(base+i for i in face) for face in local_faces)
     return {'vertices':vertices,'faces':faces,'diagnostics':{
         'quad_faces':sum(len(face)==4 for face in faces),
         'triangle_faces':sum(len(face)==3 for face in faces),
         'direct_quad_rings':direct,'triangulated_rings':triangulated,
-        'boundary_rings':len(sources)*2,'loose_vertices':0}}
+        'boundary_rings':len(sources)*2,'loose_vertices':0,'protected_miter_seams':seam_count}}
 
 
 def make_mesh_data(result,name='Outline'):

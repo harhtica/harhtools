@@ -4,7 +4,17 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.7.0
+## Version 1.8.0
+
+- Mesh borders retain a straight seam between matching sharp corners after
+  offset cleanup. Quad merging no longer removes the seam at concave junctions.
+- Optional **Add Bevel** adds editable depth and perimeter bevel modifiers.
+  Choose **Rounded**, **Chamfer**, **Concave**, **Soft Square**, or **Custom**;
+  set depth, width and segments. Internal face-strip seams are not beveled.
+- **Update Selected Border** applies those settings to existing flat mesh borders.
+  Regenerate older outline results to get the corrected corner topology.
+
+## Included from 1.7.0
 
 - Make Outline now defaults to **Sharp** corners and a **Mesh Border** result.
   Pointed Gothic tips use intersecting parallel offset edges and stay sharp.
@@ -13,7 +23,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.7.0](https://harhtica.github.io/harhtools/harhtools-1.7.0.zip), or use
+[Download 1.8.0](https://harhtica.github.io/harhtools/harhtools-1.8.0.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).
@@ -103,7 +113,7 @@ bridge credentials, or external Python dependencies in the extension package.
 ## Release your next change
 
 1. Edit the Python files in `extension/`.
-2. Increase `version` in `extension/blender_manifest.toml`, for example to `1.7.1`.
+2. Increase `version` in `extension/blender_manifest.toml`, for example to `1.8.1`.
 3. Run the builder below using Python 3.11+ (Blender's bundled Python works).
 4. Test the resulting ZIP in Blender, then commit and push the source and `docs/`.
 

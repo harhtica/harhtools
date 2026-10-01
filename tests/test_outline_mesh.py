@@ -121,6 +121,39 @@ lobes=[(cx+math.cos(a+(b-a)*i/120),math.sin(a+(b-a)*i/120))
 run('Concave Gothic cusp outside',[lobes],width=.04,direction='OUTWARD')
 run('Concave Gothic cusp inside',[lobes],width=.04,direction='INWARD')
 
+# Dense cusps lose offset samples during collision cleanup. Each surviving
+# sharp source corner must connect directly to its matching offset corner.
+# These constraints must survive CDT and subsequent triangle-to-quad merging.
+for direction in ('INWARD','OUTWARD'):
+    result,built,data=run('Cusp seam survives cleanup '+direction,[lobes],width=.04,direction=direction)
+    source,offset=result['source_loops'][0],result['offset_loops'][0]
+    result['offset_correspondence']=[None]
+    built=om.build_mesh(result);data=om.make_mesh_data(result);verify(result,built,data)
+    edges=om._edge_faces(built['faces']);vertices=[p[:2] for p in built['vertices']]
+    for i,turn in om._corners(source):
+        if turn>=0:continue
+        j=min((j for j,t in om._corners(offset) if t<0),key=lambda j:math.dist(source[i],offset[j]))
+        edge=tuple(sorted((vertices.index(tuple(source[i])),vertices.index(tuple(offset[j])))))
+        assert edge in edges and len(edges[edge])==2,'Concave miter needs a direct two-face seam'
+    assert built['diagnostics']['protected_miter_seams']>=2
+
+compound=[]
+radius=math.hypot(1,.1);start=math.atan2(.1,1);end=math.acos(.5/radius)
+for cx,cy,r,a,b in ((1,0,2,math.pi,2*math.pi/3),(-1,0,2,math.pi/3,0),
+                 (0,-.1,radius,start,end),(1,-.1,radius,math.pi-end,math.pi-start),
+                 (-1,-.1,radius,start,end),(0,-.1,radius,math.pi-end,math.pi-start)):
+    compound.extend((cx+r*math.cos(a+(b-a)*i/82),cy+r*math.sin(a+(b-a)*i/82)) for i in range(82))
+result,built,data=run('Six-arc Gothic border preserves all corner seams',[compound],width=.02,direction='OUTWARD')
+source,offset=result['source_loops'][0],result['offset_loops'][0]
+assert len(source)!=len(offset),'Fixture must exercise removed offset points'
+vertices=[p[:2] for p in built['vertices']];edges=om._edge_faces(built['faces'])
+assert len(om._corners(source))==len(om._corners(offset))==6
+for i,turn in om._corners(source):
+    j=min((j for j,t in om._corners(offset) if turn*t>0),key=lambda j:math.dist(source[i],offset[j]))
+    edge=tuple(sorted((vertices.index(tuple(source[i])),vertices.index(tuple(offset[j])))))
+    assert len(edges.get(edge,[]))==2,'All six corners need an explicit shared edge'
+assert built['diagnostics']['protected_miter_seams']==6
+
 # Explicit loss of correspondence exercises the same constrained fallback
 # used when a dense apex needed intersection trimming, with all boundaries
 # still exactly preserved and the hollow center remaining open.

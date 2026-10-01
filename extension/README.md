@@ -1,11 +1,11 @@
-# harhtools 1.7.0
+# harhtools 1.8.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.7.0.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.8.0.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -103,7 +103,35 @@ they are not clamped or rounded. Choose **Round** for circular opening-corner jo
 consistent normals and aspect-preserving planar UVs, ready for mesh editing or
 extrusion. Corresponding boundaries form quad strips; tight junctions use validated
 triangles where needed. The center remains hollow. **Curve Outline** retains the
-previous filled POLY-curve output when a curve result is wanted.
+previous filled POLY-curve output when a curve result is wanted. Sharp corner
+seams remain explicit even when cleanup changes the number of offset points.
+Existing results are not rewritten: regenerate an older border for this topology.
+
+### Optional bevel profiles
+
+With **Result: Mesh Border**, enable **Add Bevel** and choose **Depth**, **Bevel
+Width**, **Profile**, and **Segments**. Profiles are **Rounded**, **Chamfer**,
+**Concave**, **Soft Square**, and **Custom** (an adjustable native bevel Shape
+value). Chamfer uses one segment. The flat outline preview stays responsive;
+depth and bevel are added when you press **Enter**.
+
+To change an existing flat mesh border, select it in Object Mode, choose settings
+here, then click **Update Selected Border**. This updates the two existing
+Harhtools modifiers rather than adding duplicates. The base vertices, faces and
+UVs remain editable. You can also edit **Harhtools Border Depth** and **Harhtools
+Border Bevel** directly in Blender's modifier panel, or remove them to return to
+the flat border. Depth extends behind the original face.
+
+Only perimeter edges get bevel weight. Internal strip seams and the vertical
+edges at sharp silhouette corners remain unweighted. Native overlap clamping
+limits the bevel where necessary; a very large requested width may therefore
+be reduced locally. These are native Blender
+[bevel profiles](https://docs.blender.org/manual/en/5.2/modeling/modifiers/generate/bevel.html),
+not subdivision or a change to the original outline. Bevel depth/width use the
+mesh's local units; newly generated borders have unit scale. Apply object scale
+first if an older border has been scaled and you need predictable world widths.
+
+### Snapping and output
 
 Enable **Snap to Geometry**, or press **S** while the preview is active. Drag near
 an unselected visible curve or mesh edge on the same plane; the target determines

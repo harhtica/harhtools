@@ -80,6 +80,15 @@ assert list(mesh_output.data.materials) == [material] and mesh_output.users_coll
 assert mesh_output.data.uv_layers and mesh_source.hide_get()
 assert ot.source_signature([mesh_source]) == mesh_signature and not ext.shape_library._catalog
 checks.append('Sharp Mesh Border creates four connected quads, keeps materials/UVs/source and saves no preset')
+bevel_source=square('Bevel border source');select(bevel_source)
+cfg.bevel_enabled=True;cfg.bevel_profile='ROUND'
+assert bpy.ops.view3d.harhtools_make_outline('EXEC_DEFAULT')=={'FINISHED'}
+beveled=bpy.context.active_object
+assert [m.type for m in beveled.modifiers]==['SOLIDIFY','BEVEL']
+assert len(beveled.data.polygons)==4 and len(beveled.data.vertices)==8
+assert not ext.shape_library._catalog
+checks.append('Add Bevel creates editable native modifiers on the clean mesh border')
+cfg.bevel_enabled=False
 cfg.output_type = 'CURVE'; cfg.direction = 'INWARD'
 
 left = square('Left', -4); right = square('Right', 4); select(left, right)
@@ -268,9 +277,12 @@ class Layout:
     def row(self):return self
     def label(self,*args,**kwargs):pass
     def prop(self,obj,name,*args,**kwargs):assert hasattr(obj,name),name
-    def operator(self,name,*args,**kwargs):assert name=='view3d.harhtools_make_outline'
+    def operator(self,name,*args,**kwargs):assert name in {'view3d.harhtools_make_outline','object.harhtools_border_bevel'}
 ot.draw_panel(Layout(),bpy.context)
-checks.append('Make Outline panel controls resolve')
+cfg.output_type='MESH';cfg.bevel_enabled=True
+for preset in ('ROUND','CHAMFER','CONCAVE','SQUARE','CUSTOM'):
+    cfg.bevel_profile=preset;ot.draw_panel(Layout(),bpy.context)
+checks.append('Make Outline and bevel profile panel controls resolve')
 ext.shape_library.capture_shape = capture
 ext.unregister(); ext.register(); ext.unregister()
 assert not hasattr(bpy.types.WindowManager,'harhtools_outline')

@@ -3,7 +3,7 @@ import math
 import time
 import bpy
 from mathutils import Vector
-from bpy.props import BoolProperty, EnumProperty, FloatProperty, PointerProperty
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty
 from . import outline_geometry, outline_snap, shortcuts
 
 STATE_KEY = 'harhtools_outline_preview'
@@ -43,6 +43,16 @@ class HARHTOOLS_PG_outline(bpy.types.PropertyGroup):
                                 description='Snap thickness to nearby coplanar curves and mesh edges while dragging', update=_snap_changed)
     hide_sources: BoolProperty(name='Hide Original Shapes', default=True,
                                description='Keep the original shapes recoverable but hide their filled centers after creating outlines')
+    bevel_enabled: BoolProperty(name='Add Bevel', default=False,
+                                description='Add editable depth and perimeter bevel modifiers to the mesh result')
+    bevel_depth: FloatProperty(name='Depth', default=.005, min=.000001, subtype='DISTANCE', unit='LENGTH', precision=4)
+    bevel_width: FloatProperty(name='Bevel Width', default=.0003, min=.000001, subtype='DISTANCE', unit='LENGTH', precision=4)
+    bevel_segments: IntProperty(name='Segments', default=6, min=1, max=32)
+    bevel_profile: EnumProperty(name='Profile', default='ROUND', items=[
+        ('ROUND','Rounded','Circular edge profile'),('CHAMFER','Chamfer','Single flat bevel face'),
+        ('CONCAVE','Concave','Inward-curved profile'),('SQUARE','Soft Square','Fuller convex profile'),
+        ('CUSTOM','Custom','Adjust the native bevel shape value')])
+    bevel_shape: FloatProperty(name='Shape', default=.5, min=0, max=1)
 
 
 def source_signature(objects):
@@ -87,7 +97,7 @@ def make_results(prepared, thickness, direction, join_style='ROUND'):
     return [outline_geometry.build_outline(item, thickness, direction=direction, join_style=join_style) for item in prepared]
 
 
-def commit_outlines(context, sources, results, expected_signature, *, hide_sources=True, output_type='CURVE'):
+def commit_outlines(context, sources, results, expected_signature, *, hide_sources=True, output_type='CURVE', bevel_options=None):
     """Build all data first; cancellation/failure never leaves partial outlines."""
     if not sources or len(sources) != len(results):
         raise ValueError('Every selected source needs one valid outline result.')
@@ -118,6 +128,10 @@ def commit_outlines(context, sources, results, expected_signature, *, hide_sourc
             obj['harhtools_outline_source'] = source.name
             for material in source.data.materials:
                 obj.data.materials.append(material)
+        if bevel_options is not None:
+            if output_type!='MESH':raise ValueError('Add Bevel requires Mesh Border output.')
+            from . import outline_bevel
+            outline_bevel.apply(outputs,**bevel_options)
         for obj in old_selection:
             obj.select_set(False)
         if hide_sources:
@@ -156,6 +170,33 @@ def _nearest_boundary(point, loops):
 
 def inside_sources(point, prepared):
     return bool(source_owners_at(point, prepared, inside=True))
+
+
+def bevel_options(cfg):
+    if not cfg.bevel_enabled or cfg.output_type!='MESH':return None
+    from . import outline_bevel
+    return outline_bevel.options(cfg)
+
+
+class OBJECT_OT_harhtools_border_bevel(bpy.types.Operator):
+    bl_idname='object.harhtools_border_bevel'
+    bl_label='Update Border Bevel'
+    bl_description='Add or update editable depth and bevel profiles on selected flat mesh borders'
+    bl_options={'REGISTER','UNDO'}
+
+    @classmethod
+    def poll(cls,context):
+        return context.mode=='OBJECT' and any(obj.type=='MESH' for obj in context.selected_objects) and not bpy.app.driver_namespace.get(STATE_KEY)
+
+    def execute(self,context):
+        from . import outline_bevel
+        try:
+            objects=[obj for obj in context.selected_objects if obj.type=='MESH']
+            outline_bevel.apply(objects,**outline_bevel.options(settings(context)))
+            self.report({'INFO'},f'Updated {len(objects)} border bevel(s). Depth and bevel modifiers remain editable.')
+            return {'FINISHED'}
+        except Exception as exc:
+            self.report({'ERROR'},str(exc));return {'CANCELLED'}
 
 
 def _inside_index(item):
@@ -227,7 +268,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             cfg = settings(context)
             results = make_results(prepared, cfg.thickness, cfg.direction, cfg.join_style)
             outputs = commit_outlines(context, sources, results, source_signature(sources),
-                                      hide_sources=cfg.hide_sources, output_type=cfg.output_type)
+                                      hide_sources=cfg.hide_sources, output_type=cfg.output_type, bevel_options=bevel_options(cfg))
             self.report({'INFO'}, f'Created {len(outputs)} outline(s). Shape Library saves only with +.')
             return {'FINISHED'}
         except Exception as exc:
@@ -247,7 +288,8 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         self._region = next(r for r in self._area.regions if r.type == 'WINDOW')
         self._view = self._area.spaces.active.region_3d
         cfg = settings(context)
-        self._original_settings = (cfg.thickness, cfg.direction, cfg.snap_geometry, cfg.join_style, cfg.output_type)
+        self._original_settings = {name:getattr(cfg,name) for name in ('thickness','direction','snap_geometry','join_style','output_type',
+            'bevel_enabled','bevel_depth','bevel_width','bevel_segments','bevel_profile','bevel_shape')}
         try:
             self._sources, self._prepared = prepare_selection(context)
             # Dragging uses a lighter outline. Confirmation recomputes the
@@ -402,7 +444,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
                 cfg = settings(context)
                 results = make_results(self._prepared, cfg.thickness, cfg.direction, cfg.join_style)
                 outputs = commit_outlines(context, self._sources, results, self._signature,
-                                          hide_sources=cfg.hide_sources, output_type=cfg.output_type)
+                                          hide_sources=cfg.hide_sources, output_type=cfg.output_type, bevel_options=bevel_options(cfg))
             except Exception as exc:
                 self._error = str(exc)
                 self.report({'ERROR'}, self._error); return {'RUNNING_MODAL'}
@@ -501,7 +543,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             pass
         if cancel and context is not None:
             cfg = settings(context)
-            cfg.thickness, cfg.direction, cfg.snap_geometry, cfg.join_style, cfg.output_type = self._original_settings
+            for name,value in self._original_settings.items():setattr(cfg,name,value)
 
 
 def cancel_running(*_args):
@@ -515,6 +557,14 @@ def draw_panel(layout, context):
     cfg = settings(context); state = bpy.app.driver_namespace.get(STATE_KEY)
     box.prop(cfg, 'thickness'); box.prop(cfg, 'direction')
     box.prop(cfg, 'join_style'); box.prop(cfg, 'output_type')
+    if cfg.output_type=='MESH':
+        box.prop(cfg,'bevel_enabled')
+        if cfg.bevel_enabled:
+            box.prop(cfg,'bevel_depth');box.prop(cfg,'bevel_width');box.prop(cfg,'bevel_profile')
+            if cfg.bevel_profile=='CUSTOM':box.prop(cfg,'bevel_shape')
+            if cfg.bevel_profile!='CHAMFER':box.prop(cfg,'bevel_segments')
+            box.operator('object.harhtools_border_bevel',text='Update Selected Border')
+            if state:box.label(text='Bevel is added when you press Enter.')
     box.prop(cfg, 'snap_geometry'); box.prop(cfg, 'hide_sources')
     row = box.row(); row.enabled = state is None
     row.operator('view3d.harhtools_make_outline', text='Make Outline', icon='MOD_SOLIDIFY')
@@ -528,7 +578,7 @@ def draw_panel(layout, context):
 
 
 def register():
-    for cls in (HARHTOOLS_PG_outline, VIEW3D_OT_harhtools_make_outline):
+    for cls in (HARHTOOLS_PG_outline, VIEW3D_OT_harhtools_make_outline, OBJECT_OT_harhtools_border_bevel):
         bpy.utils.register_class(cls)
     bpy.types.WindowManager.harhtools_outline = PointerProperty(type=HARHTOOLS_PG_outline)
     bpy.app.handlers.load_pre.append(cancel_running)
@@ -540,6 +590,6 @@ def unregister():
         bpy.app.handlers.load_pre.remove(cancel_running)
     if hasattr(bpy.types.WindowManager, 'harhtools_outline'):
         del bpy.types.WindowManager.harhtools_outline
-    for cls in (VIEW3D_OT_harhtools_make_outline, HARHTOOLS_PG_outline):
+    for cls in (OBJECT_OT_harhtools_border_bevel, VIEW3D_OT_harhtools_make_outline, HARHTOOLS_PG_outline):
         if cls.is_registered:
             bpy.utils.unregister_class(cls)

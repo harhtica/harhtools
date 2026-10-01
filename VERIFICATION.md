@@ -1,5 +1,29 @@
 # Release verification
 
+## Version 1.8.0
+
+- Sharp corner correspondence is recovered after offset cleanup, checked against
+  both boundaries, inserted as constrained edges, and protected from quad merging.
+  Portable six-arc Gothic and concave cusp regressions require direct two-face
+  seams at the corner pairs while preserving all source and offset coordinates.
+- The latest saved arch read during verification had 490 source boundary points
+  and 482 offset points. All six corner pairs have explicit seams. Close-up plots
+  of actual mesh edges before/after were visually checked. The scene was not saved
+  or reverted, and the source coordinates were verified unchanged.
+- Rounded, Chamfer, Concave, Soft Square and Custom use native Solidify and Bevel
+  modifiers. Native evaluated synthetic frames are distinct, watertight and hollow.
+  The four presets also pass manifold/area/topology checks on the saved arch at
+  depth 0.005 m and bevel width 0.0003 m; its evaluated profiles were plotted.
+- Only boundary edges receive weight. Native Solidify propagates it to top/bottom
+  perimeters while new vertical miter edges and internal face seams remain zero.
+  Base mesh coordinates, faces and UVs remain unchanged across profile updates.
+- Invalid batches are rejected before edits; injected mid-batch failures restore
+  previous modifiers/weights and remove new data. Actual operator creation,
+  updating, UI property access and cancellation/settings restoration are covered.
+- All 18 suites passed in background Blender 5.2. This does not claim live viewport
+  interaction or FPS verification. Native overlap clamping can reduce local bevel
+  width where space is limited; source shapes remain recoverable.
+
 ## Version 1.7.0
 
 - Sharp miter joins intersect adjacent parallel offset lines without a bevel,

@@ -241,16 +241,20 @@ try:
         assert abs(commit_calls[-1][0][0]['thickness'] - .3) < 1e-5
         CHECKS.append('Enter flushes a queued drag coordinate and commits only the precise final geometry')
 
+        before_bevel=(cfg.bevel_enabled,cfg.bevel_profile,cfg.bevel_depth,cfg.bevel_width,cfg.bevel_segments,cfg.bevel_shape)
         h = invoke(); token = h._timer
         h.modal(context, event('LEFTMOUSE', 'PRESS', 800))
         h.modal(context, event('MOUSEMOVE', x=700))
         with patch.object(h, 'over_controls', return_value=True):
             cfg.join_style = 'ROUND'; cfg.output_type = 'CURVE'
+            cfg.bevel_enabled=True;cfg.bevel_profile='CUSTOM';cfg.bevel_depth=.3
+            cfg.bevel_width=.01;cfg.bevel_segments=12;cfg.bevel_shape=.8
             assert h.modal(context, event('ESC', 'PRESS')) == {'CANCELLED'}
         assert manager.removed.count(token) == 1 and not draw_handlers
         assert bpy.app.driver_namespace.get(ot.STATE_KEY) is None
         assert abs(cfg.thickness - .1) < 1e-6
         assert cfg.join_style == 'MITER' and cfg.output_type == 'MESH'
+        assert before_bevel==(cfg.bevel_enabled,cfg.bevel_profile,cfg.bevel_depth,cfg.bevel_width,cfg.bevel_segments,cfg.bevel_shape)
         CHECKS.append('Escape over sidebar cancels queued work, removes timer/handlers and restores settings')
 
         source.matrix_world = (Matrix.Translation((1234.567, -876.543, 987.654))
