@@ -4,7 +4,19 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.12.1
+## Version 1.12.2
+
+- **Selected Arc** accepts open edge sections on filled meshes. In Edge Select
+  mode, select one or more end caps; each rounds separately with fixed corners.
+- A single straight edge can gain arc vertices while remaining attached to its
+  faces. **Match Nearby Spacing** or a manual **Vertices** count controls detail.
+  Existing face vertices and cross edges are retained; extra points subdivide
+  the selected edges without cutting unrelated geometry.
+- Selection follows the edges actually selected, so unselected diagonals no
+  longer create false branches. Preview, manual edits, Escape and Ctrl+A work
+  across all selected sections in the active mesh.
+
+## Included from 1.12.1
 
 - Remove cuts only the region under the pointer, including inside a previous
   merged fill. Erasing a bridge separates the surviving pieces so later edits
@@ -99,7 +111,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.12.1](https://harhtica.github.io/harhtools/harhtools-1.12.1.zip), or use
+[Download 1.12.2](https://harhtica.github.io/harhtools/harhtools-1.12.2.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

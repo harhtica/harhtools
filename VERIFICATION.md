@@ -1,5 +1,23 @@
 # Release verification
 
+## Version 1.12.2
+
+- Six relevant Blender 5.2 suites passed: selected face edges, existing arc
+  behavior, live arc edits, arc planes, confirm keys and previous-release reload.
+- Native mesh tests round one edge and two independent caps of the same filled
+  plane. End corners remain exact, faces stay connected, materials and original
+  UV values survive, and a shared internal edge remains joined to both faces.
+- Nine rotation/scale cases stay in the source plane. Explicit edge selection
+  ignores unselected diagonals; genuine branches are rejected. Existing
+  face-connected vertices are retained when requesting a smaller count.
+- Modal tests cover nearby-spacing counts, manual density, normal vertex edits,
+  exact Escape geometry/selection restoration and Ctrl+A confirmation. Splitting
+  one face edge into a 2048-point arc took about 6 ms in the synthetic fixture;
+  this is not a live viewport FPS measurement.
+- Reload from published 1.12.1 preserves unsaved objects and tool settings. Tests
+  use background Blender and simulated input. The open desktop viewport was
+  not operated or visually verified, and the user's blend was not saved/reverted.
+
 ## Version 1.12.1
 
 - Ten relevant Blender 5.2 suites passed: pure fill grouping, native three-circle

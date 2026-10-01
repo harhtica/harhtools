@@ -1,4 +1,4 @@
-"""Live arc editing on one selected mesh chain; outside vertices stay fixed."""
+"""Live arc editing on selected mesh sections; outside vertices stay fixed."""
 import math
 import time
 import statistics
@@ -14,7 +14,8 @@ STATE='harhtools_arc_preview'
 
 def selection(obj):
     bm=bmesh.from_edit_mesh(obj.data)
-    return tuple((v.select,v.hide) for v in bm.verts)
+    return (tuple(sorted(bm.select_mode)),tuple((v.select,v.hide) for v in bm.verts),
+            tuple((e.select,e.hide) for e in bm.edges),tuple((f.select,f.hide) for f in bm.faces))
 
 
 def neighboring_spacing(obj,path,closed):
@@ -113,7 +114,7 @@ def frame(coords,closed,support,plane='AUTO',previous=None):
                 plane_mode=plane,plane_source=source)
 
 
-def capture(obj,plane='AUTO',previous=None):
+def capture_vertices(obj,plane='AUTO',previous=None):
     bm=bmesh.from_edit_mesh(obj.data);bm.verts.index_update();bm.edges.index_update()
     chosen={v for v in bm.verts if v.select and not v.hide}
     if not chosen:raise ValueError('Select the vertices of one continuous outline section.')
@@ -149,9 +150,67 @@ def capture(obj,plane='AUTO',previous=None):
                 support=support,**frame(coords,closed,support,plane,previous))
 
 
+def selected_edge_paths(bm):
+    """Only explicitly selected edges participate; face diagonals cannot branch them."""
+    edges={e for e in bm.edges if e.select and not e.hide and all(not v.hide for v in e.verts)}
+    if not edges:raise ValueError('Select an edge or connected edge sections in Edge Select mode.')
+    links={}
+    for edge in edges:
+        for vertex in edge.verts:links.setdefault(vertex,[]).append(edge)
+    if any(len(row)>2 for row in links.values()):
+        raise ValueError('Select unbranched edge sections; deselect edges crossing the section.')
+    result=[]
+    while edges:
+        seed=min(edges,key=lambda e:e.index);component={seed};pending=[seed]
+        while pending:
+            for vertex in pending.pop().verts:
+                for other in links[vertex]:
+                    if other not in component:component.add(other);pending.append(other)
+        vertices={v for e in component for v in e.verts}
+        ends=[v for v in vertices if len(links[v])==1];closed=not ends
+        start=min(ends or vertices,key=lambda v:v.index)
+        path=[start];current=start;remaining=set(component)
+        while remaining:
+            edge=min((e for e in links[current] if e in remaining),key=lambda e:e.index)
+            remaining.remove(edge);current=edge.other_vert(current)
+            if current!=start:path.append(current)
+        edges.difference_update(component);result.append((path,closed,component))
+    return result
+
+
+def capture(obj,plane='AUTO',previous=None):
+    bm=bmesh.from_edit_mesh(obj.data);bm.verts.index_update();bm.edges.index_update()
+    if 'EDGE' not in bm.select_mode:return capture_vertices(obj,plane,previous)
+    sections=[]
+    old_sections=previous.get('sections',[previous]) if previous else []
+    for path,closed,edges in selected_edge_paths(bm):
+        wire=all(not v.link_faces and all(e.other_vert(v) in path for e in v.link_edges)
+                 for v in (path if closed else path[1:-1]))
+        # A two-point edge has no interior vertices: inspect its own faces too.
+        wire=wire and all(not e.link_faces for e in edges)
+        if closed and not wire:
+            raise ValueError('For a filled plane, select open edge sections with fixed end corners.')
+        coords=[tuple(v.co) for v in path]
+        support=surrounding_points(path,closed)
+        # Opposite selected caps may select every corner of a face. Its other
+        # corners still establish the plane even though they are selected too.
+        face_points=[tuple(v.co) for f in {f for e in edges for f in e.link_faces if not f.hide}
+                     for v in f.verts if v not in path and not v.hide]
+        if face_points and fitted_normal(coords+face_points) is not None:support=face_points
+        previous_section=next((old for old in old_sections if old['indices']==[v.index for v in path]),None)
+        sections.append(dict(indices=[v.index for v in path],coords=coords,closed=closed,wire=wire,
+            resample=True,edge_selection=True,endpoint_selected=(True,True),
+            spacing=neighboring_spacing(obj,path,closed),support=support,
+            **frame(coords,closed,support,plane,previous_section)))
+    info=dict(sections[0])
+    if len(sections)>1:info['sections']=sections
+    return info
+
+
 def positions(info,count,amount,roundness,reverse=False):
     original=[Vector(p) for p in info['coords']];closed=info['closed']
-    if not info['wire']:count=len(original)
+    if not info.get('resample',info['wire']):count=len(original)
+    elif not info['wire']:count=max(len(original),count)
     count=max(3,int(count));u=Vector(info['u']);v=Vector(info['v'])*(-1 if reverse else 1)
     points=[];full=closed and amount>=math.tau-1e-6
     if not closed:amount=min(amount,math.radians(359))
@@ -177,7 +236,7 @@ def positions(info,count,amount,roundness,reverse=False):
 
 
 def matched_count(obj,info,cfg):
-    if not cfg.match_spacing or not info['wire'] or not info['spacing']:return cfg.vertices
+    if not cfg.match_spacing or not info.get('resample',info['wire']) or not info['spacing']:return cfg.vertices
     samples,closed=positions(info,257,cfg.amount,cfg.roundness,cfg.reverse)
     matrix=obj.matrix_world.to_3x3();points=[matrix@Vector(p) for p in samples]
     pairs=list(zip(points,points[1:]))+([(points[-1],points[0])] if closed else [])
@@ -185,33 +244,72 @@ def matched_count(obj,info,cfg):
     return max(3,min(2048,round(length/info['spacing'])+(0 if closed else 1)))
 
 
+def subdivide_path(bm,path,count):
+    """Split selected edges in place, retaining faces, custom data and cross edges."""
+    if count<len(path):raise ValueError('Face-connected sections must retain their existing vertices.')
+    pairs=list(zip(path,path[1:]));extra=count-len(path)
+    lengths=[(b.co-a.co).length for a,b in pairs];total=math.fsum(lengths)
+    weights=[extra*length/total if total else extra/len(pairs) for length in lengths]
+    cuts=[int(weight) for weight in weights]
+    for i in sorted(range(len(pairs)),key=lambda i:weights[i]-cuts[i],reverse=True)[:extra-sum(cuts)]:cuts[i]+=1
+    result=[path[0]]
+    for (a,b),number in zip(pairs,cuts):
+        current=a
+        for remaining in range(number,0,-1):
+            edge=bm.edges.get((current,b))
+            _,vertex=bmesh.utils.edge_split(edge,current,1/(remaining+1))
+            vertex.select=True;vertex.hide=False
+            bm.edges.get((current,vertex)).select=True
+            bm.edges.get((vertex,b)).select=True
+            result.append(vertex);current=vertex
+        result.append(b)
+    return result
+
+
+def write_section(bm,path,info,coords,closed):
+    if len(coords)==len(path) and closed==info['closed']:
+        for vertex,co in zip(path,coords):vertex.co=co
+        return
+    if not info['wire']:
+        if not info.get('edge_selection') or closed or info['closed']:
+            raise ValueError('Use Edge Select mode to subdivide an open face-connected section.')
+        created=subdivide_path(bm,path,len(coords))
+        for vertex,co in zip(created,coords):vertex.co=co
+        return
+    pairs=list(zip(path,path[1:]))+([(path[-1],path[0])] if info['closed'] else [])
+    for a,b in pairs:
+        edge=bm.edges.get((a,b))
+        if edge:bm.edges.remove(edge)
+    remove=path if info['closed'] else path[1:-1]
+    for vertex in remove:bm.verts.remove(vertex)
+    if info['closed']:created=[bm.verts.new(co) for co in coords]
+    else:created=[path[0]]+[bm.verts.new(co) for co in coords[1:-1]]+[path[-1]]
+    pairs=list(zip(created,created[1:]))+([(created[-1],created[0])] if closed else [])
+    for a,b in pairs:bm.edges.new((a,b))
+    flags={vertex:True for vertex in created}
+    if not info['closed']:
+        flags[created[0]],flags[created[-1]]=info['endpoint_selected']
+    # Edge selection propagates to vertices in Blender, so establish
+    # edge flags first and restore the precise vertex flags last.
+    for a,b in pairs:bm.edges.get((a,b)).select=flags[a] and flags[b]
+    for vertex,flag in flags.items():vertex.select=flag
+
+
+def sections(info):
+    return info.get('sections',[info])
+
+
 def write(obj,snapshot,info,coords,closed):
     editing=obj.mode=='EDIT';bm=bmesh.from_edit_mesh(obj.data) if editing else bmesh.new()
     try:
         select_mode=set(bm.select_mode) or {'VERT'}
         bm.clear();bm.from_mesh(snapshot);bm.select_mode=select_mode;bm.verts.ensure_lookup_table()
-        path=[bm.verts[i] for i in info['indices']]
-        if len(coords)==len(path) and closed==info['closed']:
-            for vertex,co in zip(path,coords):vertex.co=co
-        else:
-            if not info['wire']:raise ValueError('Changing vertex count is supported on wire chains; face-connected sections keep their topology.')
-            pairs=list(zip(path,path[1:]))+([(path[-1],path[0])] if info['closed'] else [])
-            for a,b in pairs:
-                edge=bm.edges.get((a,b))
-                if edge:bm.edges.remove(edge)
-            remove=path if info['closed'] else path[1:-1]
-            for vertex in remove:bm.verts.remove(vertex)
-            if info['closed']:created=[bm.verts.new(co) for co in coords]
-            else:created=[path[0]]+[bm.verts.new(co) for co in coords[1:-1]]+[path[-1]]
-            pairs=list(zip(created,created[1:]))+([(created[-1],created[0])] if closed else [])
-            for a,b in pairs:bm.edges.new((a,b))
-            flags={vertex:True for vertex in created}
-            if not info['closed']:
-                flags[created[0]],flags[created[-1]]=info['endpoint_selected']
-            # Edge selection propagates to vertices in Blender, so establish
-            # edge flags first and restore the precise vertex flags last.
-            for a,b in pairs:bm.edges.get((a,b)).select=flags[a] and flags[b]
-            for vertex,flag in flags.items():vertex.select=flag
+        if coords is not None:
+            items=sections(info)
+            # Resolve every original index before a wire section removes vertices.
+            paths=[[bm.verts[i] for i in item['indices']] for item in items]
+            outputs=zip(coords,closed) if 'sections' in info else [(coords,closed)]
+            for item,path,(points,cyclic) in zip(items,paths,outputs):write_section(bm,path,item,points,cyclic)
         bm.normal_update()
         if editing:bmesh.update_edit_mesh(obj.data,loop_triangles=True,destructive=True)
         else:bm.to_mesh(obj.data);obj.data.update()
@@ -222,7 +320,7 @@ def write(obj,snapshot,info,coords,closed):
 def changed(cfg,context):
     state=bpy.app.driver_namespace.get(STATE)
     if state and not getattr(state,'_syncing',False):
-        if not state._info['closed'] and cfg.amount>math.radians(359)+1e-6:
+        if any(not item['closed'] for item in sections(state._info)) and cfg.amount>math.radians(359)+1e-6:
             cfg.amount=math.radians(359)
         state._dirty=True;state._area.tag_redraw()
 
@@ -237,7 +335,7 @@ class HARHTOOLS_PG_edit_arc(bpy.types.PropertyGroup):
     roundness:FloatProperty(name='Roundness',default=1,min=0,max=1,update=changed)
     reverse:BoolProperty(name='Reverse Bend',default=False,update=changed)
     match_spacing:BoolProperty(name='Match Nearby Spacing',default=True,update=changed,
-        description='Match the edge spacing of adjoining unselected wire vertices; face topology stays unchanged')
+        description='Match adjoining unselected edge spacing; selected face edges can gain vertices while keeping their faces attached')
 
 class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
     bl_idname='mesh.harhtools_edit_arc';bl_label='Adjust Selected Arc';bl_options={'REGISTER','UNDO'}
@@ -268,7 +366,7 @@ class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
         self._syncing=True
         try:
             cfg=self._wm.harhtools_edit_arc
-            cfg.amount=info['angle'];cfg.vertices=len(info['coords']);cfg.roundness=1;cfg.reverse=False
+            cfg.amount=info['angle'];cfg.vertices=max(3,max(len(item['coords']) for item in sections(info)));cfg.roundness=1;cfg.reverse=False
         finally:self._syncing=False
         self._valid=True;self._dirty=False;self._error='';self._key=self.settings_key()
         self._area.tag_redraw()
@@ -304,14 +402,17 @@ class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
         self._dirty=False
         if key==self._key:return
         try:
-            if self._info['plane_mode']!=cfg.plane:
-                self._info.update(frame(self._info['coords'],self._info['closed'],self._info['support'],cfg.plane,self._info))
-            count=matched_count(self._obj,self._info,cfg)
-            coords,closed=positions(self._info,count,cfg.amount,cfg.roundness,cfg.reverse)
+            output=[]
+            for item in sections(self._info):
+                if item['plane_mode']!=cfg.plane:
+                    item.update(frame(item['coords'],item['closed'],item['support'],cfg.plane,item))
+                count=matched_count(self._obj,item,cfg)
+                output.append(positions(item,count,cfg.amount,cfg.roundness,cfg.reverse))
+            coords,closed=tuple(zip(*output)) if 'sections' in self._info else output[0]
             write(self._obj,self._snapshot,self._info,coords,closed)
             self._expected=signature(self._obj);self._selection=selection(self._obj);self._error=''
             self._syncing=True
-            try:cfg.vertices=len(coords)
+            try:cfg.vertices=max(len(points) for points,_ in output)
             finally:self._syncing=False
             self._key=self.settings_key()
         except Exception as exc:self._error=str(exc)
@@ -343,7 +444,7 @@ class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
         if self._timer:self._wm.event_timer_remove(self._timer);self._timer=None
         if self._snapshot:
             if cancel and self._valid and self._expected is not None and signature(self._obj)==self._expected:
-                write(self._obj,self._snapshot,self._info,self._info['coords'],self._info['closed'])
+                write(self._obj,self._snapshot,self._info,None,None)
             elif cancel:self.report({'INFO'},'Kept your latest mesh edits.')
             bpy.data.meshes.remove(self._snapshot);self._snapshot=None
         if bpy.app.driver_namespace.get(STATE) is self:bpy.app.driver_namespace.pop(STATE,None)
@@ -360,18 +461,23 @@ def draw_panel(layout,context):
     cfg=context.window_manager.harhtools_edit_arc
     box.prop(cfg,'plane')
     if state:
+        items=sections(state._info);resample=all(item.get('resample',item['wire']) for item in items)
+        spacing=all(item['spacing'] for item in items)
         box.prop(cfg,'amount',slider=True);box.prop(cfg,'roundness',slider=True)
-        row=box.row();row.enabled=state._info['wire'];row.prop(cfg,'match_spacing')
-        row=box.row();row.enabled=state._info['wire'] and (not cfg.match_spacing or not state._info['spacing']);row.prop(cfg,'vertices',slider=True)
-        if state._info['wire'] and cfg.match_spacing and not state._info['spacing']:box.label(text='No adjoining spacing found; using Vertices.')
+        row=box.row();row.enabled=resample;row.prop(cfg,'match_spacing')
+        row=box.row();row.enabled=resample and (not cfg.match_spacing or not spacing);row.prop(cfg,'vertices',slider=True)
+        if resample and cfg.match_spacing and not spacing:box.label(text='Missing nearby spacing: uses Vertices.')
+        if len(items)>1:box.label(text=f'{len(items)} sections; each rounds separately.')
         box.prop(cfg,'reverse')
         box.label(text='Joins to the rest stay fixed.')
-        if not state._info['wire']:box.label(text='Face-connected: existing vertices retained.')
+        if any(not item['wire'] for item in items):
+            box.label(text='Faces stay attached; existing vertices retained.')
+            if not resample:box.label(text='Use Edge Select to add arc vertices.')
         box.label(text='Edit vertices normally; controls follow.')
         box.label(text='Enter / Ctrl+A: keep; Esc: undo sliders')
         if state._error:box.label(text=state._error,icon='ERROR')
     else:
-        box.label(text='Select one continuous outline section.')
+        box.label(text='Select vertices or open edge sections.')
         box.operator('mesh.harhtools_edit_arc',icon='CURVE_BEZCIRCLE')
 
 CLASSES=(HARHTOOLS_PG_edit_arc,MESH_OT_harhtools_edit_arc)

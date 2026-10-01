@@ -1,11 +1,11 @@
-# harhtools 1.11.1
+# harhtools 1.12.2
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.11.1.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.12.2.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -14,11 +14,13 @@ subscribe to the optional public update repository.
 
 ## Selected Arc (mesh Edit Mode)
 
-Select the vertices of one continuous outline section, then choose **Selected
-Arc > Adjust Selected Arc** at the top of the harhtools tab. **Arc Amount** sets
-its angle and **Roundness** blends the original section toward a circular arc.
+Select the vertices of one continuous outline section, or use **Edge Select**
+to select open edge sections on a filled plane. A single straight edge works;
+several disconnected selected ends round separately in the active mesh. Choose
+**Selected Arc > Adjust Selected Arc** at the top of the harhtools tab.
+**Arc Amount** sets the angle and **Roundness** blends each section toward an arc.
 **Reverse Bend** flips the arc to the other side. Changes appear in the workspace.
-Press **Enter** with the pointer over the viewport to keep the result, or **Esc**
+Press **Enter** or **Ctrl+A** with the pointer over the viewport to keep the result, or **Esc**
 to undo slider changes since your last manual mesh edit.
 
 **Arc Plane: Shape** uses the connected unselected geometry to keep the bend in
@@ -29,15 +31,21 @@ For isolated straight lines, choose **Object XY**, **Object XZ**, or **Object YZ
 these axes are local to the object, so they follow its rotation. An incompatible
 plane is rejected if it would require moving the fixed endpoints.
 
-Only the selected section changes. Adjacent unselected joining vertices stay
-fixed, so selecting a lower tip leaves an upper tip unchanged. A wire section's
-**Match Nearby Spacing** option is on by default. It measures up to three
+Only the selected sections change. In Edge Select mode, each section's two end
+corners stay fixed. Vertex Select mode also preserves adjacent unselected joins,
+so selecting a lower tip leaves an upper tip unchanged.
+**Match Nearby Spacing** is on by default for wire arcs and selected face edges. It measures up to three
 untouched edges adjoining each end, takes their median world-space length, and
 chooses the closest vertex count for the new arc (3â€“2048 vertices). Switch it off
 for a manual **Vertices** count. Without usable adjoining edges, the manual count
-is used. Sections attached to faces retain
-their original vertex count and connectivity. The selection must form one flat,
-connected, unbranched chain in the active mesh. A complete closed wire loop is
+is used. Selected face edges gain points by splitting those edges in place;
+neighboring faces remain attached and retain their materials and custom data.
+Existing face-connected vertices are never removed, so their count is the lower
+limit. Subdivision can leave a face with more than four corners; it does not
+rebuild the entire plane into quads. Vertex Select mode retains the original
+face-connected vertex count. Each selected edge section must be flat and
+unbranched. Unselected diagonals and cross edges do not become part of the arc.
+A complete closed wire loop is
 also supported. Open sections stop at 359 degrees because their ends stay apart.
 
 You can move, rotate or scale vertices, or select another section, with the
