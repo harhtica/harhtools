@@ -1,12 +1,26 @@
 # harhtools
 
-A Blender extension with a planar Shape Builder and two object-centering tools.
+A Blender extension with an editable-curve Shape Builder, reusable shape library,
+arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-Version 1.0.3 groups the pink/white controls in a dark inset and adds centered
-Add/Remove buttons. The chosen mode and active Shape Builder stay highlighted.
-Hold Alt for temporary removal, then release it to return to the chosen mode.
-Wire guides stay unchanged.
+## Version 1.5.1
+
+- Separate clicks create separate fills. A continuous drag merges only touched
+  regions and fills; unrelated fills retain their own boundaries and objects.
+- Shape Library saves only when you click **+**. Confirming a fill does not save
+  a preset or write a thumbnail.
+- Fills appear immediately. Cached outlines and preview buffers reduce repeated
+  work while moving the pointer and dragging.
+- Shape Builder preserves editable Bezier spans and supports Edge Trim, holes,
+  curve Edit Mode, and optional mesh output. Original curve guides remain intact.
+- Curve presets retain their handles. Arrays, snapping and alignment controls,
+  reusable themes, and optional cutting of mesh guides are also included.
+
+[Download 1.5.1](https://harhtica.github.io/harhtools/harhtools-1.5.1.zip), or use
+the Blender repository below. Save your work and restart Blender after replacing
+an already loaded extension; reverting a blend file does not reload Python code.
+See [release verification](VERIFICATION.md) and [regression tests](tests/README.md).
 
 ## One-time installation for friends
 
@@ -44,7 +58,7 @@ bridge credentials, or external Python dependencies in the extension package.
 ## Release your next change
 
 1. Edit the Python files in `extension/`.
-2. Increase `version` in `extension/blender_manifest.toml`, for example to `1.0.4`.
+2. Increase `version` in `extension/blender_manifest.toml`, for example to `1.5.2`.
 3. Run the builder below using Python 3.11+ (Blender's bundled Python works).
 4. Test the resulting ZIP in Blender, then commit and push the source and `docs/`.
 
@@ -56,6 +70,11 @@ The builder validates the extension and generates the feed using Blender's own
 tools. It refuses to replace an existing version with different contents. Old
 ZIPs remain available so cached links keep working; the feed lists only the
 current release. GitHub Pages deploys the pushed `docs/` folder.
+
+Use this repository's `extension/` as the release source. Copying files only into
+Blender's installation folder does not update GitHub or the public repository.
+Publish source and generated `docs/` together, verify the deployed feed and ZIP,
+then keep local installations on that same release.
 
 This source and extension are packaged under GPL-3.0-or-later; see LICENSE.
 

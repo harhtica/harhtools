@@ -1,13 +1,16 @@
 schema_version = "1.0.0"
 id = "harhtools"
-version = "1.0.3"
+version = "1.5.1"
 name = "harhtools"
-tagline = "Build shapes from planar wires and align objects"
+tagline = "Build editable curves, trim paths, array and align objects"
 maintainer = "harhtools"
 type = "add-on"
-tags = ["Mesh", "Object"]
+tags = ["Mesh", "Object", "Add Curve"]
 blender_version_min = "4.2.0"
 license = ["SPDX:GPL-3.0-or-later"]
 
+[permissions]
+files = "Save color themes and reusable shape presets in user storage"
+
 [build]
-paths = ["__init__.py", "shape_builder.py", "centering.py", "icons.py", "README.md", "LICENSE"]
+paths = ["__init__.py", "shape_builder.py", "curve_geometry.py", "fill_groups.py", "shape_library.py", "intersection_cuts.py", "centering.py", "icons.py", "shortcuts.py", "section_drag.py", "array_core.py", "array_inference.py", "array_tween.py", "array_tool.py", "README.md", "LICENSE"]

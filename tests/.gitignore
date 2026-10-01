@@ -1,0 +1,8 @@
+__pycache__/
+_artifacts/
+*_results.json
+*.log
+*.blend
+*.blend1
+manual_library_*/
+library_integration_*/

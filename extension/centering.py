@@ -16,7 +16,7 @@ import bpy
 from mathutils import Vector
 from bpy.props import EnumProperty
 import time
-from . import icons
+from . import icons, shortcuts, array_tool, shape_library
 
 
 _NOTICE_KEY = 'arch_tools_center_notification'
@@ -115,6 +115,24 @@ def object_center(obj, depsgraph, method):
     if method == 'ORIGIN':
         return obj.matrix_world.translation.copy()
     evaluated = obj.evaluated_get(depsgraph)
+    # Measure visible geometry in one shared coordinate system. A local
+    # bounding-box center depends on an object's local axes; identical outlines
+    # with differently rotated mesh coordinates can otherwise move apart.
+    if evaluated.type in {'MESH', 'CURVE', 'SURFACE', 'FONT', 'META'}:
+        mesh = evaluated.to_mesh()
+        try:
+            if mesh is not None and mesh.vertices:
+                matrix = evaluated.matrix_world
+                first = matrix @ mesh.vertices[0].co
+                lower, upper = first.copy(), first.copy()
+                for vertex in mesh.vertices:
+                    point = matrix @ vertex.co
+                    for axis in range(3):
+                        lower[axis] = min(lower[axis], point[axis])
+                        upper[axis] = max(upper[axis], point[axis])
+                return (lower + upper) * 0.5
+        finally:
+            evaluated.to_mesh_clear()
     corners = evaluated.bound_box
     if all(tuple(corner) == (-1.0, -1.0, -1.0) for corner in corners):
         return evaluated.matrix_world.translation.copy()
@@ -212,6 +230,7 @@ class OBJECT_OT_center_selected_to_active(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         return (context.mode == 'OBJECT' and context.active_object is not None
+                and not bpy.app.driver_namespace.get(array_tool.STATE_KEY)
                 and context.active_object in context.selected_objects
                 and len(context.selected_objects) > 1)
 
@@ -252,6 +271,29 @@ class OBJECT_OT_center_selected_to_active(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class VIEW3D_OT_harhtools_panel_tab(bpy.types.Operator):
+    bl_idname='view3d.harhtools_panel_tab'
+    bl_label='harhtools Tab'
+    bl_description='Open Shape Builder, Transform, Array, your shape library, or settings'
+    tab: EnumProperty(items=[('TOOLS','Shape Builder','Build shapes from selected outlines'),
+                            ('TRANSFORM','Transform','Align shapes and origins'),
+                            ('ARRAY','Array','Repeat and fit selected shapes'),
+                            ('LIBRARY','Shape Library','Reuse your saved shapes'),
+                            ('SETTINGS','Settings','Shortcuts and color themes')])
+
+    @classmethod
+    def description(cls,context,properties):
+        return {'TOOLS':'Shape Builder','TRANSFORM':'Transform — align shapes and origins',
+                'ARRAY':'Array — repeat and fit shapes','LIBRARY':'Shape Library — saved shapes',
+                'SETTINGS':'Settings — shortcuts and colors'}.get(properties.tab,'harhtools')
+
+    def execute(self,context):
+        context.window_manager.harhtools_panel_tab='TOOLS' if self.tab=='LIBRARY' else self.tab
+        array_tool.set_tab_active(context,self.tab=='ARRAY')
+        if context.area:context.area.tag_redraw()
+        return {'FINISHED'}
+
+
 class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
     bl_label = 'harhtools'
     bl_idname = 'VIEW3D_PT_center_selected_to_active'
@@ -259,32 +301,93 @@ class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
     bl_region_type = 'UI'
     bl_category = 'harhtools'
 
-    def draw_header(self, context):
-        self.layout.label(text='', icon_value=icons.icon('heart'))
-
     def draw(self, context):
-        layout = self.layout.box()
-        state=bpy.app.driver_namespace.get('arch_tools_shape_builder')
-        if getattr(bpy.types,'VIEW3D_OT_arch_shape_builder',None):
-            row=layout.row();row.scale_y=1.25
-            row.operator('view3d.arch_shape_builder',text='Shape Builder  (Active)' if state else 'Shape Builder  (Shift+M)',icon_value=icons.icon('shape'),depress=bool(state))
-            mode=('REMOVE' if state._alt else 'ADD') if state else context.window_manager.arch_shape_builder_mode
-            row=layout.row(align=True);row.alignment='CENTER'
-            row.operator('view3d.harhtools_shape_mode',text='Add',icon_value=icons.icon('add'),depress=mode=='ADD').mode='ADD'
-            row.operator('view3d.harhtools_shape_mode',text='Remove',icon_value=icons.icon('remove'),depress=mode=='REMOVE').mode='REMOVE'
-            row=layout.row();row.enabled=not bool(state)
-            row.prop(context.window_manager,'arch_shape_builder_gap_snap')
-            layout.separator()
-        layout.label(text='Center to active',icon_value=icons.icon('heart'))
-        column=layout.column(align=True);column.enabled=not bool(state)
-        column.operator('object.center_selected_to_active', text='Center Shapes to Active', icon_value=icons.icon('bounds')).center_method = 'BOUNDS'
-        column.operator('object.center_selected_to_active', text='Match Origins to Active', icon_value=icons.icon('origin')).center_method = 'ORIGIN'
-        row=layout.row();row.scale_y=.8
-        row.label(text='Select the target last.')
+        tab=context.window_manager.harhtools_panel_tab
+        if tab=='LIBRARY':tab='TOOLS'  # Older saved scripts still open this page.
+        row=self.layout.row()
+        rail=row.column(align=False);rail.ui_units_x=1.6
+        tool_rail=rail.column(align=False);tool_rail.scale_y=1.3
+        for key,icon in [('TOOLS','shape'),('TRANSFORM','align'),('ARRAY','array')]:
+            tool_rail.operator('view3d.harhtools_panel_tab',text='',icon_value=icons.icon(icon),depress=tab==key).tab=key
+            tool_rail.separator(factor=.2)
+        content=row.column()
+        if tab=='ARRAY':
+            array_tool.draw_panel(content,context)
+        elif tab=='SETTINGS':
+            content.label(text='Settings')
+            shortcuts.draw_shortcuts(content,context,compact=True)
+        elif tab=='TRANSFORM':
+            content.label(text='Transform')
+            draw_center_box(content,context)
+        else:
+            for index,section in enumerate(shortcuts.section_order(shortcuts.settings(context),'TOOLS')):
+                if index:content.separator(factor=.4)
+                {'BUILDER':draw_builder_box,'LIBRARY':shape_library.draw_panel}[section](content,context)
+        # Separate footer below the entire content, so Settings stays at the
+        # bottom even when the Library or Settings page is taller than Tools.
+        self.layout.separator(factor=.45)
+        footer=self.layout.row(align=False)
+        gear=footer.column(align=False);gear.ui_units_x=1.6;gear.scale_y=1.3
+        gear.operator('view3d.harhtools_panel_tab',text='',icon_value=icons.icon('gear'),depress=tab=='SETTINGS').tab='SETTINGS'
+        footer.column().label(text='')
+
+
+def draw_builder_box(layout,context):
+    if not getattr(bpy.types,'VIEW3D_OT_arch_shape_builder',None):return
+    state=bpy.app.driver_namespace.get('arch_tools_shape_builder');active=bool(state)
+    box=shortcuts.section_box(layout,context,'Shape Builder','BUILDER','TOOLS',icons.icon('shape'))
+    if box is None:return
+    wm=context.window_manager
+    controls=box.column(align=True);controls.enabled=not active
+    controls.prop(wm,'arch_shape_builder_edit_mode',text='Work on')
+    output=controls.row(align=True);output.enabled=wm.arch_shape_builder_edit_mode!='EDGES'
+    output.prop(wm,'arch_shape_builder_output_type',text='Result')
+    if wm.arch_shape_builder_edit_mode=='EDGES':
+        box.label(text='Alt-drag trims; click restores.')
+    else:
+        box.label(text='Click: separate fill; drag: merge touched.')
+        box.label(text='Alt-click/drag removes touched fills.')
+    box.label(text='Enter creates result; Esc cancels.')
+    row=box.row(align=False);row.scale_y=shortcuts.CONTROL_HEIGHT
+    row.enabled=not bool(bpy.app.driver_namespace.get(array_tool.STATE_KEY))
+    row.operator('view3d.arch_shape_builder',text='On',depress=active)
+    mode=('REMOVE' if state._alt else 'ADD') if state else context.window_manager.arch_shape_builder_mode
+    row=box.split(factor=.5,align=False);row.scale_y=shortcuts.CONTROL_HEIGHT;row.enabled=active
+    row.column(align=False).operator('view3d.harhtools_shape_mode',text='Add',icon_value=icons.icon('add'),depress=active and mode=='ADD').mode='ADD'
+    row.column(align=False).operator('view3d.harhtools_shape_mode',text='Remove',icon_value=icons.icon('remove'),depress=active and mode=='REMOVE').mode='REMOVE'
+    row=box.row(align=False);row.scale_y=shortcuts.CONTROL_HEIGHT;row.enabled=not active
+    row.prop(context.window_manager,'arch_shape_builder_gap_snap')
+    row=box.row(align=False)
+    curve_input=any(o.type=='CURVE' for o in context.selected_objects)
+    row.enabled=not curve_input and not active
+    row.prop(context.window_manager,'arch_shape_builder_cut_guides')
+    if curve_input:box.label(text='Original curve guides stay unchanged.')
+
+
+def draw_center_box(layout,context):
+    box=shortcuts.section_box(layout,context,'Align','CENTER','TRANSFORM',icons.icon('align'))
+    if box is None:return
+    column=box.column(align=False)
+    column.enabled=not bool(bpy.app.driver_namespace.get('arch_tools_shape_builder') or bpy.app.driver_namespace.get(array_tool.STATE_KEY))
+    column.scale_y=shortcuts.CONTROL_HEIGHT
+    column.operator('object.center_selected_to_active',text='Center Shapes to Last',icon_value=icons.icon('bounds')).center_method='BOUNDS'
+    column.operator('object.center_selected_to_active',text='Match Origins to Last',icon_value=icons.icon('origin')).center_method='ORIGIN'
+
+
+def register_panel_tab():
+    if not hasattr(bpy.types.WindowManager,'harhtools_panel_tab'):
+        bpy.types.WindowManager.harhtools_panel_tab=EnumProperty(
+            name='harhtools Tab',items=[('TOOLS','Shape Builder',''),('TRANSFORM','Transform',''),
+                                      ('ARRAY','Array',''),('LIBRARY','Shape Library',''),('SETTINGS','Settings','')],
+            default='TOOLS',options={'SKIP_SAVE'})
+    previous=getattr(bpy.types,'VIEW3D_OT_harhtools_panel_tab',None)
+    if previous:bpy.utils.unregister_class(previous)
+    bpy.utils.register_class(VIEW3D_OT_harhtools_panel_tab)
 
 
 def register():
     clear_notification()
+    register_panel_tab()
     for cls in (OBJECT_OT_center_selected_to_active,VIEW3D_PT_center_selected_to_active):
         previous=getattr(bpy.types,cls.__name__,None)
         if previous:bpy.utils.unregister_class(previous)
@@ -293,6 +396,8 @@ def register():
 
 def unregister():
     clear_notification()
-    for cls in (VIEW3D_PT_center_selected_to_active,OBJECT_OT_center_selected_to_active):
+    for cls in (VIEW3D_PT_center_selected_to_active,OBJECT_OT_center_selected_to_active,VIEW3D_OT_harhtools_panel_tab):
         previous=getattr(bpy.types,cls.__name__,None)
         if previous:bpy.utils.unregister_class(previous)
+    if hasattr(bpy.types.WindowManager,'harhtools_panel_tab'):
+        del bpy.types.WindowManager.harhtools_panel_tab

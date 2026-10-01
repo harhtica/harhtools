@@ -6,21 +6,25 @@
       "schema_version": "1.0.0",
       "id": "harhtools",
       "name": "harhtools",
-      "tagline": "Build shapes from planar wires and align objects",
-      "version": "1.0.3",
+      "tagline": "Build editable curves, trim paths, array and align objects",
+      "version": "1.5.1",
       "type": "add-on",
       "maintainer": "harhtools",
       "license": [
         "SPDX:GPL-3.0-or-later"
       ],
       "blender_version_min": "4.2.0",
+      "permissions": {
+        "files": "Save color themes and reusable shape presets in user storage"
+      },
       "tags": [
         "Mesh",
-        "Object"
+        "Object",
+        "Add Curve"
       ],
-      "archive_url": "./harhtools-1.0.3.zip",
-      "archive_size": 28512,
-      "archive_hash": "sha256:1a4f3eb48ab2bc16d19dcafdf6c496a827226c6ff1ef04347b0a0fb75a2a39fe"
+      "archive_url": "./harhtools-1.5.1.zip",
+      "archive_size": 114981,
+      "archive_hash": "sha256:53cfedd4609a69fe2a0899f07d9b3ef111f262fd6c910b4c531b88e07a8a17da"
     }
   ]
 }

@@ -64,6 +64,7 @@ def main():
         assert len(feed['data']) == 1
         entry = feed['data'][0]
         assert entry['id'] == 'harhtools' and entry['version'] == version
+        assert entry['archive_size'] == archive.stat().st_size
         assert entry['archive_hash'] == 'sha256:' + hashlib.sha256(archive.read_bytes()).hexdigest()
         if not existing.exists():
             shutil.copyfile(archive, existing)

@@ -1,5 +1,26 @@
 # Release verification
 
+## Version 1.5.1
+
+Validated with Blender 5.2 on Windows in separate background processes.
+
+- Separate-click ownership, touched-only drag merging, whole-fill erase, stroke
+  undo, and hover behavior passed through the actual modal and mouse methods.
+- Independent outputs and shared boundaries survive confirmation and save/reopen.
+- Curve and mesh commits make zero Shape Library writes. The explicit **+** action
+  saves correctly, and existing presets and files remain unchanged by a commit.
+- Output failures roll back generated data; optional guide cutting runs once on
+  the original selection. Source curves remain unchanged.
+- Curve tests cover original cubic spans, holes, disconnected shapes, tangencies,
+  curve Edit Mode, and safe rejection of ambiguous partial overlaps.
+- Immediate fill feedback, outline/projection invalidation, and GPU batch reuse
+  passed with mocked drawing APIs. These are not live viewport/FPS measurements.
+- Extension registration, unregister/re-register, and panel property checks passed.
+
+The release builder validates the ZIP and checks its size/hash in the generated
+feed. Portable synthetic regressions and run instructions are in `tests/`.
+Blender 4.2 is the declared minimum; this update was tested on 5.2 only.
+
 ## Version 1.0.3
 
 - Persistent Add/Remove modes and temporary Alt override passed.
@@ -37,7 +58,7 @@ Version 1.0.1, tested with Blender 5.2 on Windows.
 Tests used a separate Blender profile and did not change the user's open scene.
 The manifest declares Blender 4.2+; only 5.2 has been tested.
 
-## Public release verification
+## Historical public release verification (1.0.1)
 
 Published at https://harhtica.github.io/harhtools/index.json.
 
