@@ -598,13 +598,6 @@ def draw_panel(layout, context):
             display_units.draw(box,cfg,'bevel_depth',context);display_units.draw(box,cfg,'bevel_width',context);box.prop(cfg,'bevel_profile')
             if cfg.bevel_profile=='CUSTOM':box.prop(cfg,'bevel_shape')
             if cfg.bevel_profile!='CHAMFER':box.prop(cfg,'bevel_segments')
-            from . import outline_preview
-            box.label(text='Profile cross-section')
-            icon=outline_preview.profile_icon(cfg)
-            if icon:box.template_icon(icon_value=icon,scale=5.0)
-            else:
-                message,status_icon=outline_preview.profile_status(cfg)
-                box.label(text=message,icon=status_icon)
             profile_editor.draw(box,cfg)
             box.operator('object.harhtools_border_bevel',text='Update Selected Border')
             if state:box.label(text='Live bevel preview · Enter to keep')

@@ -1,5 +1,21 @@
 # Release verification
 
+## Version 1.11.2
+
+- All 19 built-in profiles automatically expose the native CurveProfile editor
+  in panel tests. All 14 architectural profiles retain exact agreement with
+  the native preset samples. The panel never requests raster thumbnails.
+- Drawing is read-only in Object and Edit Mode. A coalesced timer prepares
+  matching drafts, preserves edits made just before switching presets, restores
+  pristine defaults, and reuses unchanged editor data. Segment changes do not
+  accidentally create custom profiles. Failure states leave the panel usable.
+- Nine relevant background Blender 5.2 suites passed: profile panel/editor,
+  architectural profiles, outline tool/interaction/GPU, manual-only library,
+  reload bootstrap and live reload integration. Make Outline remains above
+  optional bevel controls; source geometry and selection remain unchanged.
+- Tests use native Blender APIs and simulated panel drawing. The open desktop
+  session is not operated or visually verified; no user file is saved or reverted.
+
 ## Version 1.11.1
 
 - All 29 background Blender suites passed; all three arc suites also passed after

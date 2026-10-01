@@ -62,14 +62,14 @@ settings to the source units when exporting.
 ## Editable bevel profiles
 
 **Make Outline** is above the bevel section so it stays reachable. **Add Bevel**
-is off initially; enable it to reveal profiles and the native section thumbnail.
-New thumbnails are queued outside sidebar drawing, which also works in Edit Mode.
+is off initially; enable it to reveal profiles and Blender's editable point graph.
+Every preset opens directly in this editor without an extra edit click. Editor
+data is prepared outside sidebar drawing, which also works in Edit Mode.
 
-Click **Edit Profile Points** to open Blender's native point editor on a private
-working copy. Drag/add/delete points and use the native handle and sampling
-controls. Selecting a point alone does not create a profile. The first shape
+Each preset uses a private working copy. Drag/add/delete points and use the native
+handle and sampling controls. Selecting a point alone does not create a profile. The first shape
 edit creates **<preset> - Edited**, changes the preset selector to **My Profile**,
-and refreshes the thumbnail and an active Make Outline workspace preview.
+and refreshes an active Make Outline workspace preview.
 Built-in presets remain unchanged and can be chosen again at any time.
 
 Rename the edited profile with **Name**, or choose another saved one with **My
@@ -199,8 +199,8 @@ Existing results are not rewritten: regenerate an older border for this topology
 With **Result: Mesh Border**, enable **Add Bevel** and choose **Depth**, **Bevel
 Width**, **Profile**, and **Segments**. Profiles are **Rounded**, **Chamfer**,
 **Concave**, **Soft Square**, and **Custom** (an adjustable native bevel Shape
-value). Chamfer uses one segment. A **Profile cross-section** thumbnail displays
-the native bevel shape. During Make Outline, shaded depth and bevel geometry
+value). Chamfer uses one segment. The editable point graph displays the native
+profile controls for every preset. During Make Outline, shaded depth and bevel geometry
 appear in the workspace before **Enter**, using the same native modifiers as
 the final border. Changes are coalesced and unchanged geometry is cached.
 Escape removes the preview without creating an output object.

@@ -34,7 +34,7 @@ a Blender script directly so a failed assertion produces a failing exit code.
 | `test_edit_arc.py` | Selected bottom rounding, fixed upper geometry/joins, local wire resampling, face topology preservation, exact cancellation/selection, external-edit protection and modal cleanup. |
 | `test_edit_arc_plane.py` | Connected shape planes, straight/subdivided selections, tiny/rotated/transformed inputs, fixed joins, reverse bend, off-plane repair, isolated-line overrides and live recapture. |
 | `test_edit_arc_live.py` | Normal vertex-edit event pass-through, transform guard, live selection recapture, fixed unselected joins, 64-point-circle density matching, manual counts, world scale, cancellation and bounded 2048-vertex resampling. |
-| `test_profile_panel.py` | Read-only draw restriction, all 14 native thumbnails in Edit Mode, loading/failure recovery, request coalescing, one-time bevel default, visible Make Outline button and timer cleanup. |
+| `test_profile_panel.py` | All 19 automatic native point editors, no thumbnail requests, read-only Object/Edit Mode drawing, canonical architectural samples, preset switching and edit preservation, coalesced drafts, sample updates, failure recovery, visible Make Outline button and cleanup. |
 | `test_profile_editor.py` | Native point edits fork defaults, independent user copies, matching thumbnail/modifier output, draft cleanup and custom-profile blend persistence. |
 | `test_display_units.py` | Roblox metric conversion, scene scale, editable distance round trips, negative gaps, unchanged geometry/transforms and derived-value reload handling. |
 | `test_mocked_gpu_caches.py` | Overlay coverage and cache reuse/invalidation using fake GPU/font APIs and real projection math. |
