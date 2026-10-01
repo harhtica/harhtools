@@ -1,5 +1,20 @@
 # Release verification
 
+## Version 1.11.1
+
+- All 29 background Blender suites passed; all three arc suites also passed after
+  the final center-precision adjustment.
+- Reproduced the axis jump on a temporary copy of the saved Shape Builder.004:
+  subdivided its longest edge into an open nine-point section and set a 180-degree
+  arc. Published 1.11.0 produced 0.0199604 local units of unwanted depth; the fix
+  produced zero local depth. The source and the user's saved blend were not modified.
+- New regression coverage includes 32 combinations of plane orientation, scale
+  and wire/face topology, additional object rotation/nonuniform scale, fixed joins,
+  reverse bend, recovery from an off-plane arc, disconnected geometry, tiny curves,
+  previous-plane retention, explicit object-plane overrides and live subdivision.
+- Tests use background Blender 5.2 and native mesh APIs. The open desktop session
+  is not operated or visually verified; no user file is saved or reverted.
+
 ## Version 1.11.0
 
 - All 28 regression suites passed in separate background Blender 5.2 processes.
@@ -44,7 +59,7 @@
   The thumbnail sheet was visually checked. Native custom path points, handle
   types and selection restore after injected batch failure. Escape and code
   reload preserve a user's segment count below the preset's starting count.
-- Profile thumbnail changes took roughly 3â€“6 ms in background tests; unchanged
+- Profile thumbnail changes took roughly 3ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“6 ms in background tests; unchanged
   profiles reuse the cached image. Native preview evaluation leaves no temporary
   scene, object or mesh IDs. These are CPU measurements, not live viewport FPS.
 - All 24 suites passed in isolated background Blender 5.2 processes; affected

@@ -1,11 +1,11 @@
-# harhtools 1.11.0
+# harhtools 1.11.1
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.11.0.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.11.1.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -21,11 +21,19 @@ its angle and **Roundness** blends the original section toward a circular arc.
 Press **Enter** with the pointer over the viewport to keep the result, or **Esc**
 to undo slider changes since your last manual mesh edit.
 
+**Arc Plane: Shape** uses the connected unselected geometry to keep the bend in
+its plane, including straight sections made by subdividing an edge. If the
+section was previously bent out of that plane, adjusting it at full Roundness
+returns only that section to the shape plane. Unselected vertices stay fixed.
+For isolated straight lines, choose **Object XY**, **Object XZ**, or **Object YZ**;
+these axes are local to the object, so they follow its rotation. An incompatible
+plane is rejected if it would require moving the fixed endpoints.
+
 Only the selected section changes. Adjacent unselected joining vertices stay
 fixed, so selecting a lower tip leaves an upper tip unchanged. A wire section's
 **Match Nearby Spacing** option is on by default. It measures up to three
 untouched edges adjoining each end, takes their median world-space length, and
-chooses the closest vertex count for the new arc (3–2048 vertices). Switch it off
+chooses the closest vertex count for the new arc (3â€“2048 vertices). Switch it off
 for a manual **Vertices** count. Without usable adjoining edges, the manual count
 is used. Sections attached to faces retain
 their original vertex count and connectivity. The selection must form one flat,
@@ -203,7 +211,7 @@ The Profile menu also includes 14 architectural mouldings: **Fillet**, **Fascia*
 These are distinct native custom-profile paths, including flat lips and undercuts.
 The sections are normalized presets inspired by traditional mouldings; use Width
 to size them. Choosing one starts with at least 32 segments; the Segments control
-then allows 1â€“128. Low counts simplify the section and may lose small details.
+then allows 1Ã¢â‚¬â€œ128. Low counts simplify the section and may lose small details.
 After creating a border, its custom profile can also be edited in the native
 Bevel modifier. **Update Selected Border** reapplies the selected preset.
 
@@ -308,7 +316,7 @@ the preview and restores faded guides. Returning to harhtools refreshes it.
   section's construction center. Align modular outlines before adding bevels.
   **Linked Copies** shares mesh/curve data.
 - **Hide Inactive** fades unselected mesh/curve guides. **Inactive Opacity**
-  controls their visibility from 0â€“100% (15% by default); 100% uses normal native
+  controls their visibility from 0Ã¢â‚¬â€œ100% (15% by default); 100% uses normal native
   display. Sidebar sliders do not interrupt this control. Original visibility is
   restored when the tool closes, before saving, and through undo/redo.
 

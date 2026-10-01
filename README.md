@@ -4,7 +4,16 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.11.0
+## Version 1.11.1
+
+- Selected Arc derives its plane from the connected, untouched shape, so straight
+  or subdivided sections do not bend out of the surface. Tiny and rotated shapes
+  use scale-aware tolerances. Fixed joining points stay in place.
+- **Arc Plane: Shape** is automatic; **Object XY/XZ/YZ** provide explicit control
+  for isolated straight lines. The previous plane is retained during live edits
+  when surrounding geometry cannot determine one.
+
+## Included from 1.11.0
 
 - Fixes missing architectural profile thumbnails by generating outside sidebar
   drawing. The Make Outline button stays above bevel controls; Add Bevel starts off.
@@ -60,7 +69,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.11.0](https://harhtica.github.io/harhtools/harhtools-1.11.0.zip), or use
+[Download 1.11.1](https://harhtica.github.io/harhtools/harhtools-1.11.1.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

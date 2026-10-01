@@ -18,6 +18,7 @@ TESTS = (
     'test_circle_arc.py',
     'test_edit_arc.py',
     'test_edit_arc_live.py',
+    'test_edit_arc_plane.py',
     'test_mocked_gpu_caches.py',
     'test_outline_geometry.py',
     'test_outline_mesh.py',

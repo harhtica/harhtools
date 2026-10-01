@@ -6,7 +6,7 @@ from bisect import bisect_right
 import bpy
 import bmesh
 from mathutils import Vector
-from bpy.props import FloatProperty,IntProperty,BoolProperty,PointerProperty
+from bpy.props import FloatProperty,IntProperty,BoolProperty,PointerProperty,EnumProperty
 
 STATE='harhtools_arc_preview'
 
@@ -42,7 +42,77 @@ def signature(obj):
             tuple(tuple(f.vertices) for f in obj.data.polygons))
 
 
-def capture(obj):
+def surrounding_points(path,closed):
+    """Only connected, untouched geometry can establish the surrounding plane."""
+    if closed:return []
+    seen=set(path);pending=[path[0],path[-1]];points=[]
+    while pending and len(points)<8192:
+        current=pending.pop()
+        for edge in current.link_edges:
+            other=edge.other_vert(current)
+            if edge.hide or other.hide or other.select or other in seen:continue
+            seen.add(other);pending.append(other);points.append(tuple(other.co))
+    return points
+
+
+def fitted_normal(points):
+    """A scale-relative plane test: a short edge is not a reason to change axes."""
+    if len(points)<3:return None
+    points=[Vector(p) for p in points];origin=points[0]
+    farthest=max(points,key=lambda p:(p-origin).length_squared)
+    span=(farthest-origin).length
+    if span<1e-12:return None
+    axis=(farthest-origin)/span
+    cross=max((axis.cross(p-origin) for p in points),key=lambda p:p.length_squared)
+    tolerance=max(span*2e-5,max(abs(c) for p in points for c in p)*2.4e-7,1e-12)
+    if cross.length<=tolerance:return None
+    normal=cross.normalized()
+    if max(abs((p-origin).dot(normal)) for p in points)>tolerance:return None
+    return normal
+
+
+def frame(coords,closed,support,plane='AUTO',previous=None):
+    original=[Vector(p) for p in coords];first=original[0];last=original[-1]
+    center=Vector(tuple(math.fsum(p[i] for p in original)/len(original) for i in range(3))) if closed else (first+last)*.5
+    chord=last-first
+    span=max((p-center).length for p in original)
+    tolerance=max(span*2e-5,max(abs(c) for p in original for c in p)*2.4e-7,1e-12)
+    if not closed and chord.length<1e-12:raise ValueError('The arc endpoints must be different vertices.')
+    normal=None;source='Selected curve'
+    if plane!='AUTO':
+        normal=Vector({'XY':(0,0,1),'XZ':(0,1,0),'YZ':(1,0,0)}[plane]);source='Object '+plane
+    else:
+        if support:
+            normal=fitted_normal([tuple(first),tuple(last)]+support);source='Surrounding shape'
+        if normal is None:normal=fitted_normal(coords);source='Selected curve'
+        if normal is None and previous is not None:
+            candidate=Vector(previous['normal']);origin=Vector(previous['center'])
+            span=max((p-origin).length for p in original)
+            if all(abs((p-origin).dot(candidate))<=max(span*2e-5,tolerance) for p in original):
+                normal=candidate;source='Previous plane'
+    if normal is None:
+        raise ValueError('The selection has no unique arc plane. Choose Object XY, XZ or YZ.')
+    if not closed and abs(chord.dot(normal))>tolerance:
+        raise ValueError('The fixed endpoints do not share that plane. Choose another Arc Plane.')
+    u=first-center if closed else chord
+    u=(u-normal*u.dot(normal)).normalized()
+    if u.length<.5:raise ValueError('The selected section has no width in that plane.')
+    v=normal.cross(u).normalized()
+    heights=[(p-center).dot(v) for p in original]
+    side=math.fsum(heights)
+    if abs(side)<=tolerance*len(coords):
+        # A subdivided straight side bows away from the remaining outline.
+        side=-math.fsum((Vector(p)-center).dot(v) for p in support)
+        if abs(side)<=span*1e-6 and previous is not None:side=v.dot(Vector(previous['v']))
+    if side<0:v.negate();normal.negate();heights=[-h for h in heights]
+    height=max(heights)
+    angle=math.tau if closed else max(math.radians(1),min(math.radians(359),4*math.atan2(2*height,chord.length)))
+    return dict(center=tuple(center),u=tuple(u),v=tuple(v),normal=tuple(normal),angle=angle,
+                radius=math.sqrt(sum((p-center).length_squared for p in original)/len(original)),
+                plane_mode=plane,plane_source=source)
+
+
+def capture(obj,plane='AUTO',previous=None):
     bm=bmesh.from_edit_mesh(obj.data);bm.verts.index_update();bm.edges.index_update()
     chosen={v for v in bm.verts if v.select and not v.hide}
     if not chosen:raise ValueError('Select the vertices of one continuous outline section.')
@@ -50,11 +120,11 @@ def capture(obj):
     if any(len(row)>2 for row in links.values()):raise ValueError('Select a single boundary chain, without branching edges.')
     ends=[v for v in chosen if len(links[v])<2];closed=not ends
     if len(chosen)>1 and len(ends) not in (0,2):raise ValueError('Select one connected outline section.')
-    start=min(ends or chosen,key=lambda v:v.index);path=[start];visited={start};previous=None;current=start
+    start=min(ends or chosen,key=lambda v:v.index);path=[start];visited={start};previous_vertex=None;current=start
     while True:
-        following=next((v for v in sorted(links[current],key=lambda v:v.index) if v!=previous and v not in visited),None)
+        following=next((v for v in sorted(links[current],key=lambda v:v.index) if v!=previous_vertex and v not in visited),None)
         if following is None:break
-        path.append(following);visited.add(following);previous,current=current,following
+        path.append(following);visited.add(following);previous_vertex,current=current,following
     if len(path)!=len(chosen):raise ValueError('Select one connected outline section.')
     if not closed:
         if len(path)==1:
@@ -69,28 +139,13 @@ def capture(obj):
                     else:path.append(outside[0])
         if len(path)<3:raise ValueError('Select at least one interior vertex between two endpoints.')
     coords=[tuple(v.co) for v in path]
-    first=Vector(coords[0]);last=Vector(coords[-1]);chord=last-first
-    if closed:
-        center=Vector(tuple(math.fsum(p[i] for p in coords)/len(coords) for i in range(3)))
-        u=(first-center).normalized();cross=max((u.cross(Vector(p)-center) for p in coords),key=lambda p:p.length_squared)
-    else:
-        if chord.length<1e-9:raise ValueError('The arc endpoints must be different vertices.')
-        center=(first+last)*.5;u=chord.normalized();cross=max((u.cross(Vector(p)-first) for p in coords),key=lambda p:p.length_squared)
-    if cross.length<1e-9:cross=u.cross(Vector((0,0,1)))
-    if cross.length<1e-9:cross=u.cross(Vector((0,1,0)))
-    normal=cross.normalized();v=normal.cross(u).normalized()
-    if sum((Vector(p)-center).dot(v) for p in coords)<0:v.negate();normal.negate()
-    span=max((Vector(p)-center).length for p in coords)
-    if any(abs((Vector(p)-center).dot(normal))>max(span*2e-6,1e-7) for p in coords):
-        raise ValueError('The selected section must lie in one plane.')
-    height=max((Vector(p)-center).dot(v) for p in coords)
-    angle=math.tau if closed else max(math.radians(1),min(math.radians(359),4*math.atan2(2*height,chord.length)))
+    support=surrounding_points(path,closed)
     wire=all(not vertex.link_faces and all(e.other_vert(vertex) in path for e in vertex.link_edges)
              for vertex in (path if closed else path[1:-1]))
     if closed and not wire:raise ValueError('For a filled mesh, select an open boundary section so its joins can stay fixed.')
     return dict(indices=[v.index for v in path],coords=coords,closed=closed,wire=wire,
                 endpoint_selected=(path[0].select,path[-1].select),spacing=neighboring_spacing(obj,path,closed),
-                center=tuple(center),u=tuple(u),v=tuple(v),angle=angle,radius=math.sqrt(sum((Vector(p)-center).length_squared for p in coords)/len(coords)))
+                support=support,**frame(coords,closed,support,plane,previous))
 
 
 def positions(info,count,amount,roundness,reverse=False):
@@ -171,6 +226,11 @@ def changed(cfg,context):
         state._dirty=True;state._area.tag_redraw()
 
 class HARHTOOLS_PG_edit_arc(bpy.types.PropertyGroup):
+    plane:EnumProperty(name='Arc Plane',default='AUTO',items=[
+        ('AUTO','Shape','Use the connected surrounding shape, then the selected curve'),
+        ('XY','Object XY','Bend in the object local XY plane'),
+        ('XZ','Object XZ','Bend in the object local XZ plane'),
+        ('YZ','Object YZ','Bend in the object local YZ plane')],update=changed)
     amount:FloatProperty(name='Arc Amount',default=math.pi,min=math.radians(.1),max=math.tau,subtype='ANGLE',update=changed)
     vertices:IntProperty(name='Vertices',default=64,min=3,max=2048,soft_max=512,update=changed)
     roundness:FloatProperty(name='Roundness',default=1,min=0,max=1,update=changed)
@@ -196,11 +256,11 @@ class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
         except Exception as exc:self.finish(cancel=True);self.report({'ERROR'},str(exc));return {'CANCELLED'}
     def settings_key(self):
         cfg=self._wm.harhtools_edit_arc
-        return (cfg.amount,cfg.vertices,cfg.roundness,cfg.reverse,cfg.match_spacing)
+        return (cfg.amount,cfg.vertices,cfg.roundness,cfg.reverse,cfg.match_spacing,cfg.plane)
     def adopt_mesh(self):
         """Manual edits become the new baseline; never write from a draw callback."""
         self._valid=False
-        info=capture(self._obj)
+        info=capture(self._obj,self._wm.harhtools_edit_arc.plane,getattr(self,'_info',None))
         if self._snapshot is None:self._snapshot=bpy.data.meshes.new('Harhtools arc undo snapshot')
         bmesh.from_edit_mesh(self._obj.data).to_mesh(self._snapshot)
         self._info=info;self._expected=signature(self._obj);self._selection=selection(self._obj)
@@ -228,10 +288,14 @@ class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
     def refresh(self):
         # Catch edits even if a slider callback arrives before the next timer.
         cfg=self._wm.harhtools_edit_arc;requested=self.settings_key();pending=self._dirty
-        if self.observe_mesh() and self._valid and pending:
+        recaptured=self.observe_mesh()
+        if not self._valid and pending:
+            try:self.adopt_mesh();recaptured=True
+            except ValueError as exc:self._error=str(exc);self._dirty=False
+        if recaptured and self._valid and pending:
             self._syncing=True
             try:
-                for name,value in zip(('amount','vertices','roundness','reverse','match_spacing'),requested):setattr(cfg,name,value)
+                for name,value in zip(('amount','vertices','roundness','reverse','match_spacing','plane'),requested):setattr(cfg,name,value)
             finally:self._syncing=False
             self._key=None
         if not self._valid:return
@@ -239,6 +303,8 @@ class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
         self._dirty=False
         if key==self._key:return
         try:
+            if self._info['plane_mode']!=cfg.plane:
+                self._info.update(frame(self._info['coords'],self._info['closed'],self._info['support'],cfg.plane,self._info))
             count=matched_count(self._obj,self._info,cfg)
             coords,closed=positions(self._info,count,cfg.amount,cfg.roundness,cfg.reverse)
             write(self._obj,self._snapshot,self._info,coords,closed)
@@ -290,8 +356,9 @@ def cancel(*args):
 def draw_panel(layout,context):
     if context.mode!='EDIT_MESH':return
     box=layout.box();box.label(text='Selected Arc');state=bpy.app.driver_namespace.get(STATE)
+    cfg=context.window_manager.harhtools_edit_arc
+    box.prop(cfg,'plane')
     if state:
-        cfg=context.window_manager.harhtools_edit_arc
         box.prop(cfg,'amount',slider=True);box.prop(cfg,'roundness',slider=True)
         row=box.row();row.enabled=state._info['wire'];row.prop(cfg,'match_spacing')
         row=box.row();row.enabled=state._info['wire'] and (not cfg.match_spacing or not state._info['spacing']);row.prop(cfg,'vertices',slider=True)
