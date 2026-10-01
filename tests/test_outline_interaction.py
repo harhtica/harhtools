@@ -25,9 +25,9 @@ STATS = {}
 CLOCK = [0.0]
 
 
-def event(kind='MOUSEMOVE', value='NOTHING', x=800):
+def event(kind='MOUSEMOVE', value='NOTHING', x=800, ctrl=False):
     return SimpleNamespace(type=kind, value=value, mouse_x=x, mouse_y=500,
-                           shift=False, ctrl=False, alt=False, oskey=False)
+                           shift=False, ctrl=ctrl, alt=False, oskey=False)
 
 
 class Manager:
@@ -234,12 +234,12 @@ try:
         cfg.thickness = .2  # No preview tick: cached error still belongs to 1.2.
         assert h._error
         start_builds = len(build_calls); token = h._timer
-        assert h.modal(context, event('RET', 'PRESS')) == {'FINISHED'}
+        assert h.modal(context, event('A', 'PRESS', ctrl=True)) == {'FINISHED'}
         assert len(build_calls) == start_builds + 1
         assert build_calls[-1][0] is h._prepared and abs(build_calls[-1][1] - .2) < 1e-6
         assert commit_calls[-1][0][0]['thickness'] == build_calls[-1][1]
         assert manager.removed.count(token) == 1 and not draw_handlers
-        CHECKS.append('Enter validates current precise geometry despite a stale preview error and removes the timer')
+        CHECKS.append('Ctrl+A validates current precise geometry despite a stale preview error and removes the timer')
 
         h = invoke()
         h.modal(context, event('LEFTMOUSE', 'PRESS', 800))

@@ -2,7 +2,7 @@
 
 Run this script once, then use harhtools > Shape Builder or Shift+Q in 3D View.
 Hover previews a bounded region. Click/drag adds; hold Alt and click/drag to remove.
-Separate clicks create separate fills; one drag merges only touched fills.
+Separate clicks create separate fills; a drag joins touched fills and keeps earlier explicit joins.
 Ctrl+Z undoes a stroke. Shape Library saves are manual through its + button.
 Enter creates an editable Bezier curve by default. Esc/right-click cancels.
 Guides stay unchanged unless Cut Selected Guides is enabled on confirmation.
@@ -580,8 +580,8 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
                 else f'{len(self._groups)} separate fills / {len(self._selected)} regions')
         self._workspace.status_text_set(
             f'Shape Builder | {"REMOVE (-)" if self._alt else "ADD (+)"}: {status}'
-            f'   |   Click: separate fill   Drag: merge touched fills   Hold {cfg.remove_modifier.title()}: remove   '
-            f'{shortcuts.key_label(cfg.confirm_key)}: create   {shortcuts.key_label(cfg.cancel_key)}: cancel   Ctrl+{cfg.undo_key}: undo stroke')
+            f'   |   Click: separate fill   Drag: join regions   Hold {cfg.remove_modifier.title()}: remove region   '
+            f'{shortcuts.key_label(cfg.confirm_key)} / Ctrl+A: apply   {shortcuts.key_label(cfg.cancel_key)}: cancel   Ctrl+{cfg.undo_key}: undo stroke')
 
     def hit(self,x,y):
         from bpy_extras.view3d_utils import region_2d_to_origin_3d,region_2d_to_vector_3d
@@ -630,7 +630,7 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
                 if self._edge_mode else sorted({tuple(sorted(edge))
                     for outline in fill_groups.boundary_edges_for_groups(self._arr,self._groups)
                     for edge in outline}))
-        hover_regions=fill_groups.group_for_region(self._groups,self._hover)
+        hover_regions=fill_groups.group_for_region(self._groups,self._hover,erase=self._alt,atomic=True)
         hover_key=frozenset(hover_regions)
         if hover_key!=self._hover_outline_key:
             self._hover_outline_key=hover_key
@@ -701,7 +701,8 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
             groups_changed=False
             if not self._edge_mode and len(self._stroke_hits)!=hit_count:
                 previous=self._selected.copy()
-                groups=fill_groups.gesture_groups(self._stroke_groups,self._stroke_hits,erase=not self._adding)
+                groups=fill_groups.gesture_groups(self._stroke_groups,self._stroke_hits,erase=not self._adding,
+                    neighbors=fill_groups.region_neighbors(self._arr))
                 groups_changed=groups!=self._groups
                 self._groups=groups
                 self._selected=fill_groups.selected_regions(self._groups)
@@ -735,7 +736,7 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
             return {'PASS_THROUGH'}
         if event.type in {cfg.cancel_key,'RIGHTMOUSE'} and event.value=='PRESS':
             self.finish();return {'CANCELLED'}
-        if (event.type==cfg.confirm_key or cfg.confirm_key=='RET' and event.type=='NUMPAD_ENTER') and event.value=='PRESS':
+        if shortcuts.confirm_event(event,cfg.confirm_key):
             if not self._selected and not (self._edge_mode and self._retained_edges):
                 self.report({'WARNING'},'Click a region to choose it, then press Enter.');return {'RUNNING_MODAL'}
             curve_guides=any(bpy.data.objects.get(name) is not None and bpy.data.objects[name].type=='CURVE' for name in self._sources)
@@ -961,7 +962,7 @@ class VIEW3D_OT_arch_shape_builder(bpy.types.Operator):
                     bottom=max(bottom,region.height+12*scale)
             cfg=shortcuts.settings()
             remove_hint=cfg.remove_modifier+' + drag to remove'
-            confirm_hint=shortcuts.key_label(cfg.confirm_key).upper()+' to confirm'
+            confirm_hint=shortcuts.key_label(cfg.confirm_key).upper()+' / CTRL+A to apply'
             hint=('click + DRAG to remove' if self._alt else 'click + DRAG to add')+'  |  '+remove_hint+'  |  '+confirm_hint
             blf.size(0,round(13*scale))
             available=max(80*scale,right-left)

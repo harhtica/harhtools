@@ -163,12 +163,17 @@ def merged_feedback_coverage():
     h._feedback[B] = (10.0, True)
     draws = frame(h.draw_overlay)
     assert drawn_positions(draws) == region_positions({A, B, C}), 'Part of merged hovered fill disappeared or doubled'
-    assert collections.Counter(h._hover_batch.data['pos']) == region_positions({A})
+    assert h._hover_batch is None  # The hovered atomic B is in the feedback layer.
+    assert collections.Counter(h._selected_batch.data['pos']) == region_positions({A,C})
     assert collections.Counter(h._feedback_batches[B].data['pos']) == region_positions({B})
     h._alt = True
     h._dirty = True
     draws = frame(h.draw_overlay)
     assert drawn_positions(draws) == region_positions({A, B, C}), 'Remove hover lost unaffected merged member'
+    h._feedback.clear();h._dirty=True
+    frame(h.draw_overlay)
+    assert collections.Counter(h._hover_batch.data['pos']) == region_positions({B})
+    assert collections.Counter(h._selected_batch.data['pos']) == region_positions({A,C})
     return {'all_three_selected_regions_drawn_once': True,
             'merged_nonfeedback_member_kept_visible': True,
             'add_and_remove_hover_covered': True}
@@ -237,10 +242,11 @@ def cursor_reuse_and_invalidation():
         assert len(h._outline) < old_edges
         frame(h.draw_cursor)
         assert h._screen_line_cache['selected'][2] is not selected
-        assert h._screen_line_cache['hover'][2] is not hover
+        assert h._screen_line_cache['hover'][2] is hover
         assert tuple(h._junction_batches) == markers
         assert project.call_count == calls
-        # Moving within the same merged owner should retain both outlines.
+        # Moving inside an earlier merged owner keeps selection cached but
+        # previews the new atomic region, so its internal guide remains usable.
         selected = h._screen_line_cache['selected'][2]
         hover = h._screen_line_cache['hover'][2]
         h._hover = B
@@ -248,7 +254,7 @@ def cursor_reuse_and_invalidation():
         frame(h.draw_overlay)
         frame(h.draw_cursor)
         assert h._screen_line_cache['selected'][2] is selected
-        assert h._screen_line_cache['hover'][2] is hover
+        assert h._screen_line_cache['hover'][2] is not hover
         # Viewport resize and UI scale affect stroke/marker geometry as well.
         h._region.width += 100
         frame(h.draw_cursor)
@@ -263,7 +269,7 @@ def cursor_reuse_and_invalidation():
     return {'unchanged_frame_new_batches': 0, 'unchanged_frame_projections': 0,
             'view_change_rebuilt_lines_and_junctions': True,
             'ownership_change_rebuilt_lines_only': True,
-            'hover_within_merged_owner_reused_lines': True,
+            'atomic_hover_changes_without_rebuilding_selected_lines': True,
             'resize_and_ui_scale_invalidated_screen_geometry': True}
 
 

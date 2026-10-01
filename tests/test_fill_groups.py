@@ -20,7 +20,7 @@ class FillGroupTests(unittest.TestCase):
     def test_existing_fill_click_is_noop(self):
         self.assertEqual(fg.gesture_groups([{1,2},{3}], [1]),[{1,2},{3}])
 
-    def test_drag_merges_hit_groups_in_full(self):
+    def test_drag_keeps_previous_joins_but_leaves_untouched_groups(self):
         self.assertEqual(fg.gesture_groups([{1,2},{3},{4,5}], [2,4]),[{1,2,4,5},{3}])
 
     def test_drag_adds_unfilled_hits_only_to_touched_group(self):
@@ -29,8 +29,19 @@ class FillGroupTests(unittest.TestCase):
     def test_one_unfilled_drag_creates_one_group(self):
         self.assertEqual(fg.gesture_groups([{5}], [1,2,3]),[{5},{1,2,3}])
 
-    def test_erase_removes_whole_touched_group(self):
-        self.assertEqual(fg.gesture_groups([{1,2},{3},{4,5}], [2,99],erase=True),[{3},{4,5}])
+    def test_erase_removes_only_touched_regions(self):
+        self.assertEqual(fg.gesture_groups([{1,2},{3},{4,5}], [2,99],erase=True),[{1},{3},{4,5}])
+
+    def test_erase_bridge_splits_fill_without_merging_untouched_owners(self):
+        neighbors={1:{2},2:{1,3},3:{2,4},4:{3}}
+        groups=[{1,2,3},{4}]
+        self.assertEqual(fg.gesture_groups(groups,[2],erase=True,neighbors=neighbors),[{1},{3},{4}])
+        self.assertEqual(groups,[{1,2,3},{4}])
+
+    def test_remove_hover_is_atomic_even_after_merge(self):
+        groups=[{1,2},{3}]
+        self.assertEqual(fg.group_for_region(groups,2,erase=True),{2})
+        self.assertEqual(fg.group_for_region(groups,4,erase=True),set())
 
     def test_initial_erase_never_populates_regions(self):
         self.assertEqual(fg.gesture_groups([], [1,2],erase=True),[])

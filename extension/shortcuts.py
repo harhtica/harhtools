@@ -260,6 +260,14 @@ def settings(context=None):
 def key_label(key):
     return {'RET':'Enter','NUMPAD_ENTER':'Numpad Enter','ESC':'Esc','BACK_SPACE':'Backspace'}.get(key,key.title())
 
+
+def confirm_event(event, key='RET'):
+    """Confirm only inside an active tool; no global Blender keymap override."""
+    if event.value!='PRESS':return False
+    apply_chord=(event.type=='A' and getattr(event,'ctrl',False)
+                 and not any(getattr(event,name,False) for name in ('alt','shift','oskey')))
+    return apply_chord or event.type==key or key=='RET' and event.type=='NUMPAD_ENTER'
+
 def remove_held(event,context=None):
     modifier=settings(context).remove_modifier
     return bool(getattr(event,modifier.lower(),False))
@@ -546,6 +554,7 @@ def draw_binding_box(layout,context,cfg):
     capture=bpy.app.driver_namespace.get(_CAPTURE_KEY)
     box=section_box(layout,context,'Shape Builder Shortcuts','SHORTCUTS','SETTINGS')
     if box is None:return
+    box.label(text='Ctrl+A also applies the active tool.')
     for action,label,value in [('TOGGLE','Toggle on',chord_label(cfg)),
                                ('REMOVE','Remove',cfg.remove_modifier.title()),
                                ('CONFIRM','Confirm',key_label(cfg.confirm_key)),

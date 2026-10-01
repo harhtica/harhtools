@@ -43,7 +43,7 @@ for name,method in vars(ea.MESH_OT_harhtools_edit_arc).items():
 Harness.report=lambda *a:None
 area=SimpleNamespace(regions=[],tag_redraw=lambda:None)
 ctx=SimpleNamespace(mode='EDIT_MESH',active_object=obj,area=area,window_manager=Manager(),window=None)
-event=lambda kind:SimpleNamespace(type=kind,value='PRESS',mouse_x=0,mouse_y=0)
+event=lambda kind,ctrl=False:SimpleNamespace(type=kind,value='PRESS',mouse_x=0,mouse_y=0,ctrl=ctrl)
 try:
     before_meshes=set(bpy.data.meshes);h=Harness()
     assert h.invoke(ctx,event('LEFTMOUSE'))=={'RUNNING_MODAL'}
@@ -57,7 +57,7 @@ try:
     bm=bmesh.from_edit_mesh(mesh);assert [tuple(v.co) for v in bm.verts]==original
     h=Harness();assert h.invoke(ctx,event('LEFTMOUSE'))=={'RUNNING_MODAL'}
     cfg.amount=math.pi;cfg.vertices=17
-    assert h.modal(ctx,event('RET'))=={'FINISHED'}
+    assert h.modal(ctx,event('A',ctrl=True))=={'FINISHED'}
     assert set(bpy.data.meshes)==before_meshes
     bm=bmesh.from_edit_mesh(mesh);assert len(bm.verts)==20
     for i in (0,1,2,6,7):assert original[i] in [tuple(v.co) for v in bm.verts]

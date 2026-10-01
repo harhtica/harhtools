@@ -366,8 +366,8 @@ def draw_builder_box(layout,context):
         box.label(text='Alt-drag trims; click restores.')
     else:
         box.label(text='Click: separate fill; drag: merge touched.')
-        box.label(text='Alt-click/drag removes touched fills.')
-    box.label(text='Enter creates result; Esc cancels.')
+        box.label(text='Alt-click/drag removes touched regions.')
+    box.label(text='Enter / Ctrl+A applies; Esc cancels.')
     row=box.row(align=False);row.scale_y=shortcuts.CONTROL_HEIGHT
     row.enabled=not bool(bpy.app.driver_namespace.get(array_tool.STATE_KEY) or bpy.app.driver_namespace.get(outline_tool.STATE_KEY))
     row.operator('view3d.arch_shape_builder',text='On',depress=active)

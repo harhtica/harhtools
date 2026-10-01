@@ -385,7 +385,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         except Exception as exc:
             self._results = []; self._surface = None; self._outline_key=None; self._error = str(exc)
         self._batches = None; self._surface_batch=None
-        self._workspace.status_text_set('Make Outline | Drag: thickness | S: geometry snap | Enter: create | Esc: cancel'
+        self._workspace.status_text_set('Make Outline | Drag: thickness | S: geometry snap | Enter / Ctrl+A: apply | Esc: cancel'
             + (' | ' + self._error if self._error else ''))
         self._area.tag_redraw()
 
@@ -459,7 +459,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             return {'PASS_THROUGH'}
         if event.type == 'RIGHTMOUSE' and event.value == 'PRESS':
             self.finish(context, cancel=True); return {'CANCELLED'}
-        if event.type in {'RET', 'NUMPAD_ENTER'} and event.value == 'PRESS':
+        if shortcuts.confirm_event(event):
             try:
                 # A typed value or final mouse move may still be queued. Always
                 # validate the CURRENT precise shape, not a stale preview error.
@@ -543,7 +543,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         cfg = settings(); scale = bpy.context.preferences.system.ui_scale
         width = display_units.format_length(bpy.context,cfg.thickness)
         message = ('Cannot create: ' + self._error if self._error else
-                   f'Thickness {width} | Snap {"ON" if cfg.snap_geometry else "OFF"} (S) | Drag to adjust | Enter to create')
+                   f'Thickness {width} | Snap {"ON" if cfg.snap_geometry else "OFF"} (S) | Drag to adjust | Enter / Ctrl+A to apply')
         if self._snap_hit:
             message += ' | ' + self._snap_hit['object_name']
         blf.size(0, round(13 * scale)); blf.position(0, 20 * scale, 28 * scale, 0)
@@ -600,12 +600,12 @@ def draw_panel(layout, context):
             if cfg.bevel_profile!='CHAMFER':box.prop(cfg,'bevel_segments')
             profile_editor.draw(box,cfg)
             box.operator('object.harhtools_border_bevel',text='Update Selected Border')
-            if state:box.label(text='Live bevel preview · Enter to keep')
+            if state:box.label(text='Live bevel · Enter / Ctrl+A to keep')
     if context.mode != 'OBJECT':
         box.label(text='Select closed shapes in Object Mode.')
     elif state:
         box.label(text='Drag: thickness; S: snap on/off')
-        box.label(text='Enter: create; Esc: cancel')
+        box.label(text='Enter / Ctrl+A: apply; Esc: cancel')
         if state._error:
             box.label(text='Reduce thickness or repair the shape.', icon='ERROR')
 

@@ -21,8 +21,9 @@ a Blender script directly so a failed assertion produces a failing exit code.
 
 | Suite | Coverage |
 | --- | --- |
+| `test_confirm_keys.py` | Ctrl+A dispatch through active builder, array and placement confirmation; Enter/custom confirm keys retained; other modifiers, release events and sidebar field handling. Native outline/arc confirmation is covered by their interaction suites. |
 | `test_fit_tool.py` | Single-mesh and multi-object grouped fitting, inner frame openings, balanced three-circle clearance, proportional/non-proportional scale, rotated data-copy correction, curves, planes and scale extremes, concave edge containment, protected parents/children/linked users, atomic constraint rollback, stud inputs and separate read-only fit panel. |
-| `test_fill_groups.py` | Separate fill ownership, drag merges, erase, and immutable undo snapshots. Also runs with ordinary Python. |
+| `test_fill_groups.py` | Separate fill ownership, explicit drag grouping, atomic region removal, disconnected survivors, original-region hover and immutable undo snapshots. Also runs with ordinary Python. |
 | `test_fill_groups_blender.py` | Real curve regions, independent output objects, retained shared boundaries, and intentional seam removal. |
 | `test_manual_library_only.py` | No automatic preset writes; explicit **+** saves curves; legacy insertion/refresh behavior; batch rollback and guide-cut ordering. |
 | `test_modal_gesture_regression.py` | Actual modal/mouse methods with projection and UI hooks replaced: clicks, hover, drag, erase, undo, and failed commits. |

@@ -192,16 +192,65 @@ def drag_touched_only():
     return {'only_touched_fills_merged': True, 'whole_existing_group_retained': True}
 
 
-def erase_one_fill():
+def erase_one_region():
     h = Harness([{A, B}, {C}, {D}])
     click(h, 1, alt=True)
-    assert h._groups == [{C}, {D}], h._groups
-    assert h._selected == {C, D}
-    assert set(h.feedback_calls) == {(A, False), (B, False)}
+    assert h._groups == [{A}, {C}, {D}], h._groups
+    assert h._selected == {A, C, D}
+    assert set(h.feedback_calls) == {(B, False)}
     send(h, event('Z', 'PRESS', ctrl=True))
     assert h._groups == [{A, B}, {C}, {D}]
     assert not h._painting and not h._feedback and not h._stroke_hits
-    return {'whole_hit_fill_erased': True, 'untouched_fills_preserved': 2, 'undo_restores_stroke': True}
+    return {'only_hit_region_erased': True, 'other_regions_preserved': 3, 'undo_restores_stroke': True}
+
+
+def erase_bridge_and_refill():
+    h=Harness()
+    drag(h,0,2)
+    assert h._groups==[{A,B,C}]
+    click(h,1,alt=True)
+    assert {frozenset(g) for g in h._groups}=={frozenset({A}),frozenset({C})}
+    click(h,1)
+    assert len(h._groups)==3 and h._selected=={A,B,C}
+    # Removing across two owners still leaves the third one intact.
+    drag(h,1,2,alt=True)
+    assert h._groups==[{A}]
+    return {'merge_then_remove_then_refill_without_undo':True,'remove_drag_keeps_untouched_regions':True}
+
+
+def remove_button():
+    h=Harness([{A,B,C},{D}])
+    h._mode='REMOVE'
+    click(h,1)
+    assert h._selected=={A,C,D}
+    assert len(h._groups)==3
+    return {'sidebar_remove_matches_alt_remove':True}
+
+
+def extend_explicit_join():
+    h=Harness([{A,B},{C},{D}])
+    drag(h,1,2)
+    assert h._groups==[{A,B,C},{D}],h._groups
+    select_source()
+    for output_type in ('MESH','CURVE'):
+        outputs=sb.commit_fill_groups(bpy.context,arr,h._groups,output_type=output_type)
+        assert len(outputs)==2
+        # The earlier AB join is retained when BC is crossed. Untouched D
+        # must stay a separate result in both mesh and curve output.
+        areas=[]
+        for obj in outputs:
+            evaluated=obj.evaluated_get(bpy.context.evaluated_depsgraph_get())
+            mesh=evaluated.to_mesh()
+            areas.append(sum(poly.area for poly in mesh.polygons))
+            evaluated.to_mesh_clear()
+        assert all(abs(a-b)<1e-5 for a,b in zip(areas,(3,1))),areas
+        for obj in outputs:
+            data=obj.data;bpy.data.objects.remove(obj,do_unlink=True)
+            (bpy.data.meshes if output_type=='MESH' else bpy.data.curves).remove(data)
+        select_source()
+    send(h,event('Z','PRESS',ctrl=True))
+    assert h._groups==[{A,B},{C},{D}]
+    return {'previous_AB_join_retained':True,'untouched_D_stays_separate':True,'curve_and_mesh_final_areas':[3,1]}
 
 
 def undo_drag():
@@ -292,7 +341,10 @@ with patch.object(sb.shortcuts, 'settings', lambda *a, **kw: cfg), \
     run_case('actual modal: adjacent clicks create separate fills', separate_clicks)
     run_case('actual modal: hover and modifier hover do not modify fills', hover_is_readonly)
     run_case('actual modal: drag merges only touched owners; existing fill is whole', drag_touched_only)
-    run_case('actual modal: erase one whole fill and undo that stroke', erase_one_fill)
+    run_case('actual modal: erase one region inside a fill and undo that stroke', erase_one_region)
+    run_case('actual modal: remove bridge, refill, and erase drag without undo', erase_bridge_and_refill)
+    run_case('actual modal: sidebar Remove erases only one region', remove_button)
+    run_case('actual modal and final output: extend explicit join; untouched fill stays separate', extend_explicit_join)
     run_case('actual modal: undo merge restores prior groups', undo_drag)
     run_case('actual modal: continuous drag creates one new fill', drag_new_fill)
 

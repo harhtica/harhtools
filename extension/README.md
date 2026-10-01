@@ -59,6 +59,14 @@ This changes display/input only, not geometry, transforms or scene units.
 Blender's own panels keep their native labels. Match your Roblox import scale
 settings to the source units when exporting.
 
+## Apply an active tool
+
+With the pointer over the viewport, **Ctrl+A** applies the active Shape Builder,
+Make Outline, Selected Arc, Array or shape-placement operation. **Enter** remains
+available. Sidebar fields retain their normal text-editing controls, and the
+shortcut does not replace Blender's normal Ctrl+A when no Harhtools operation is
+active. Tools such as Fit Selected already apply immediately when clicked.
+
 ## Fit / Align
 
 Open the **Fit / Align** tab (the second sidebar icon). This replaces the old
@@ -138,13 +146,16 @@ whose two control points are selected. Outlines must share a plane.
 
 - **Regions**: each click creates a separate fill. One continuous drag merges only
   the regions/fills it crosses; untouched fills stay separate. Crossing an existing
-  fill includes that whole fill. **Alt + click/drag** removes touched fills only.
-  Starting with Alt on an unfilled region does nothing.
+  fill preserves your earlier joins. **Alt + click/drag** or **Remove** subtracts
+  only the original regions you touch, even inside a merged fill. Removing a
+  bridge separates the remaining pieces; you can refill the gap without undo.
+  Starting with Alt on an unfilled region does nothing. Hover shows the original
+  region boundaries for both Add and Remove.
 - **Edge Trim**: start with all source fragments retained; **Alt + drag** removes
   the fragments between intersections or pronounced corners; click/drag restores
   them. Corners with a turn greater than 45 degrees stop a trim run. Smooth curve
   joins and fine circular tessellation stay continuous.
-- **Enter** creates one object per fill; **Esc / right-click** cancels; **Ctrl+Z** undoes a stroke.
+- **Enter / Ctrl+A** creates one object per fill; **Esc / right-click** cancels; **Ctrl+Z** undoes a stroke.
 - Hover gives a faint preview. Larger dots mark intersections and a trail follows dragging.
 - **Gap Snap** bridges small gaps. Set it to zero to use the outlines exactly.
 - **Editable Curve** is the default result. Original cubic Bezier handles are retained

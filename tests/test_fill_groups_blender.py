@@ -63,10 +63,14 @@ reports.append({'case':'drag merges touched fills, leaves third untouched','outp
 
 assert fg.gesture_groups(bridge,[a])==bridge
 assert fg.group_for_region(bridge,b)=={a,b}
-erased=fg.gesture_groups(bridge,[b],erase=True)
-assert erased==[{c}]
+erased=fg.gesture_groups(bridge,[b],erase=True,neighbors=fg.region_neighbors(arr))
+assert erased==[{a},{c}]
+assert fg.group_for_region(bridge,b,erase=True)=={b}
+objects=output_objects(erased,'RemovedSection')
+assert len(objects)==2
+assert keys(fg.boundary_edges_for_groups(arr,[{a}])[0])==keys(fg.boundary_edges_for_groups(arr,erased)[0])
 assert fg.gesture_groups([], [a],erase=True)==[]
-reports.append({'case':'hover/click/erase use whole existing fill','erase_result_groups':1,'initial_erase_stays_empty':True})
+reports.append({'case':'erase cuts only the hit region out of a merged fill','erase_result_groups':2,'initial_erase_stays_empty':True})
 reports.append({'case':'real grouped commit selects every output and never auto-saves library presets','passed':True})
 
 (OUTPUT_DIR/'fill_groups_blender_results.json').write_text(json.dumps({'source':'Actual cap and two shoulder Bezier circles','regions':len(arr['regions']),'checks':reports},indent=2))

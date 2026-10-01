@@ -898,7 +898,7 @@ class HARHTOOLS_OT_shape_drag(bpy.types.Operator):
             text = f'Rotate {self._turn_axis}: {degrees:.0f}° | Move mouse | Shift: fine | {self._turn_axis}: move again'
         else:
             self._hint = f'{self._placement_label}  ·  X / Y / Z: rotate'
-            text = f'{self._placement_label} | X / Y / Z: rotate | Release to place'
+            text = f'{self._placement_label} | X / Y / Z: rotate | Release / Ctrl+A: place'
         self._workspace.status_text_set(text + ' | Esc / right-click: cancel')
 
     def update_pointer(self, context, event):
@@ -932,6 +932,7 @@ class HARHTOOLS_OT_shape_drag(bpy.types.Operator):
 
     def modal(self, context, event):
         global _last_row_click
+        from . import shortcuts
         if self._done:
             return {'CANCELLED'}
         if event.type in {'ESC', 'RIGHTMOUSE', 'WINDOW_DEACTIVATE'} and event.value in {'PRESS', 'NOTHING'}:
@@ -961,8 +962,9 @@ class HARHTOOLS_OT_shape_drag(bpy.types.Operator):
         if event.type in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
             self.update_pointer(context, event)
             return {'RUNNING_MODAL'}
-        if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
-            if not finishing_release and not bpy.app.background:
+        applying=shortcuts.confirm_event(event) and self._target is not None
+        if (event.type == 'LEFTMOUSE' and event.value == 'RELEASE') or applying:
+            if not applying and not finishing_release and not bpy.app.background:
                 self._release_pending = SimpleNamespace(type=event.type, value=event.value,
                                                        mouse_x=event.mouse_x, mouse_y=event.mouse_y,
                                                        ctrl=event.ctrl, oskey=event.oskey, shift=event.shift)
@@ -972,7 +974,7 @@ class HARHTOOLS_OT_shape_drag(bpy.types.Operator):
                 # PASS_THROUGH lets the original release reach that button.
                 return {'PASS_THROUGH'}
             self.update_pointer(context, event)
-            if self._rename_pending and not self._dragging:
+            if self._rename_pending and not self._dragging and not applying:
                 self.finish()
                 bpy.ops.harhtools.shape_rename('INVOKE_DEFAULT')
                 return {'CANCELLED'}

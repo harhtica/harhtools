@@ -7,6 +7,7 @@ import bpy
 import bmesh
 from mathutils import Vector
 from bpy.props import FloatProperty,IntProperty,BoolProperty,PointerProperty,EnumProperty
+from . import shortcuts
 
 STATE='harhtools_arc_preview'
 
@@ -331,7 +332,7 @@ class MESH_OT_harhtools_edit_arc(bpy.types.Operator):
             self.observe_mesh();self.finish(cancel=True);return {'CANCELLED'}
         over_ui=any(r.type=='UI' and r.x<=event.mouse_x<r.x+r.width and r.y<=event.mouse_y<r.y+r.height for r in self._area.regions)
         if over_ui:return {'PASS_THROUGH'}
-        if event.type in {'RET','NUMPAD_ENTER'} and event.value=='PRESS':
+        if shortcuts.confirm_event(event):
             self.refresh()
             if self._error:return {'RUNNING_MODAL'}
             self.finish();return {'FINISHED'}
@@ -367,7 +368,7 @@ def draw_panel(layout,context):
         box.label(text='Joins to the rest stay fixed.')
         if not state._info['wire']:box.label(text='Face-connected: existing vertices retained.')
         box.label(text='Edit vertices normally; controls follow.')
-        box.label(text='Enter: keep · Esc: undo slider changes')
+        box.label(text='Enter / Ctrl+A: keep; Esc: undo sliders')
         if state._error:box.label(text=state._error,icon='ERROR')
     else:
         box.label(text='Select one continuous outline section.')

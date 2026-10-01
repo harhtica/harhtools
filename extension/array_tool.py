@@ -357,7 +357,7 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
             if source_edit:self._tween.settle()
             self._tween_sources=identities;self._tween_mode=self._cfg.mode;self._tween_revision=revision
         else:self._tween.clear()
-        self._workspace.status_text_set(None if self._sidebar_suspended else 'Array | Click to select | Shift + wheel: axis | Enter: generate | Esc: cancel')
+        self._workspace.status_text_set(None if self._sidebar_suspended else 'Array | Click to select | Shift + wheel: axis | Enter / Ctrl+A: apply | Esc: cancel')
         self._area.tag_redraw()
 
     def over_controls(self,event):
@@ -442,7 +442,7 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
         right_select=getattr(getattr(keyconfig,'preferences',None),'select_mouse','LEFT')=='RIGHT'
         if (event.type=='ESC' or (event.type=='RIGHTMOUSE' and not right_select)) and event.value=='PRESS':
             self.finish(context);return {'CANCELLED'}
-        if event.type in {'RET','NUMPAD_ENTER'} and event.value=='PRESS':return self.generate(context)
+        if shortcuts.confirm_event(event):return self.generate(context)
         if event.type=='MOUSEMOVE':return {'PASS_THROUGH'}
         # Let Blender handle selection, box select, and transforms normally.
         # The next timer tick rebuilds the preview from the new selection.
@@ -486,7 +486,7 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
         cfg=shortcuts.settings();scale=bpy.context.preferences.system.ui_scale
         if self._error:message=self._error
         elif not self._plan.new_object_count:message='No whole copies fit in this sweep  |  ESC to cancel' if self._plan.ring_info else 'No copies fit between these objects  |  ESC to cancel'
-        else:message=f'{self._plan.new_object_count} new objects  |  SHIFT + wheel: axis  |  ENTER to generate  |  ESC to cancel'
+        else:message=f'{self._plan.new_object_count} new objects  |  SHIFT + wheel: axis  |  ENTER / CTRL+A to apply  |  ESC to cancel'
         blf.size(0,12*scale)
         width,_=blf.dimensions(0,message)
         x=max(12*scale,(self._region.width-width)*.5);y=22*scale

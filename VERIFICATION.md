@@ -1,5 +1,20 @@
 # Release verification
 
+## Version 1.12.1
+
+- Ten relevant Blender 5.2 suites passed: pure fill grouping, native three-circle
+  fills, modal gestures, GPU cache mocks, confirm keys, outline interaction,
+  Selected Arc, manual-only library, live reload integration and grouped fitting.
+- Region removal preserves untouched parts of a merged fill, splits disconnected
+  survivors, permits refill without undo, and matches both the Remove button and
+  Alt gestures. Actual output meshes and curves retain independent fill areas.
+- Actual modal dispatch uses Ctrl+A for Shape Builder, Array and shape placement;
+  native outline and arc fixtures confirm pending changes and release timers/data.
+  Enter remains recognized. Plain A, other modifier combinations and key release
+  do not trigger the alias; sidebar field events pass through.
+- Native geometry/API tests and simulated input/drawing were used. The desktop
+  viewport was not visually verified and the user's blend was not saved/reverted.
+
 ## Version 1.12.0
 
 - Six relevant Blender 5.2 suites passed: fitting, profile panel, distance units,
