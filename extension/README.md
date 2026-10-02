@@ -1,11 +1,11 @@
-# harhtools 1.12.3
+# harhtools 1.13.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.12.3.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.13.0.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -298,8 +298,20 @@ the even border thickness. A target on the wrong side of a shape cannot set that
 shape's inset/outset. Hidden or locked guides and out-of-plane geometry are excluded.
 Finish and restart the tool after editing snap-target geometry.
 
-Dragging processes the latest pointer position at most 30 times per second;
-idle hover does not run snapping or rebuild the border. Numeric edits coalesce
+A green highlighted edge, diamond contact marker, white measurement line and
+width label show exactly which target will be used. Hover reveals the target;
+drag to set its thickness. The capture radius is 22 pixels at normal UI scale.
+
+**Copy Thickness** below the thickness field (or **C** during Make Outline) lets
+you click a mesh edge or straight Poly segment to use its world-space length.
+Pick an edge running across an existing border, not along its perimeter. Object
+scale is included; the display respects your scene units or Roblox Studs setting.
+The selected edge stays unchanged. **Esc** cancels the picker, and an active
+outline preview resumes. Curved Bezier segments have no straight edge length;
+use a mesh edge or Poly segment to measure a width.
+
+Dragging and snap hover process the latest pointer position at most 30 times per
+second; hover never rebuilds the border. Numeric edits coalesce
 the same way, and releasing the mouse or pressing Enter uses the final value.
 The first snap query can briefly pause while a large scene's guide cache is built;
 that scan is skipped entirely while snapping remains off.
@@ -313,8 +325,13 @@ Bezier inputs are adaptively sampled with a recorded world-space error bound;
 the new offset is not an exact Bezier curve. Dense mesh/poly boundaries are simplified
 within the same recorded tolerance while preserving corners. Original source
 data stays intact. The preview uses lighter sampling; confirmation rebuilds at
-final precision. Widths that collapse tips, cross boundaries,
-or merge holes are rejected, with the original shape preserved. NURBS, open paths,
+final precision. **Safe Inset** is on by default: crowded sections close and merge
+instead of overlapping. The remaining interior may split or disappear entirely.
+Every preview starts from the original boundary, so reducing thickness restores
+the detail. Regular areas retain quad strips; collision junctions use validated
+triangles and quads. Originals remain recoverable after confirmation; the finished
+mesh itself is not a procedural inset modifier. Turn Safe Inset off to reject
+widths that change the boundary topology. NURBS, open paths,
 nonplanar shapes and ambiguous intersecting source loops are not supported.
 
 ## Reload installed updates without reverting the file

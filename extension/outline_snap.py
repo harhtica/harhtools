@@ -595,5 +595,8 @@ class OutlineSnapCache:
                 best = dict(thickness=thickness, world_point=Vector(world),
                             screen_point=Vector(hit[2]), object_name=target['object_name'],
                             pixel_distance=math.sqrt(hit[0]), nearest_source_point=nearest,
-                            target_parameter=hit[3])
+                            target_parameter=hit[3], target_index=index)
+        if best is not None:
+            index=best['target_index'];cp=self._targets[index]['cp']
+            best['target_world_points']=[self._world(_point(cp,t)) for t,_ in self._projected_samples[index]]
         return best

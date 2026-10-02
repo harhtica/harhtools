@@ -76,6 +76,7 @@ batch_module = ModuleType('gpu_extras.batch')
 batch_module.batch_for_shader = lambda shader, mode, data: Batch(mode, data)
 extras.batch = batch_module
 blf = ModuleType('blf')
+blf.dimensions=lambda *args:(180,16)
 
 
 def font(method, *args):
@@ -292,6 +293,28 @@ def hint_real_properties():
             'font_failure_has_no_GPU_state_effect': True}
 
 
+def snap_feedback():
+    from bpy_extras import view3d_utils
+    hit={'target_world_points':[(0,0,0),(1,0,0)],'world_point':(.4,0,0)}
+    region=SimpleNamespace(width=1000,height=800)
+    with patch.object(view3d_utils,'location_3d_to_region_2d',lambda r,v,p:Vector((400+100*p.x,400+100*p.y))), \
+         patch.object(ot.outline_pick,'bpy',SimpleNamespace(context=fake_context)):
+        before=state_tuple();DRAWN.clear()
+        ot.outline_pick.draw_feedback(hit,region,None,'Snap target · border · 0.25 studs',[(.4,-1,0),(.4,0,0)])
+        assert state_tuple()==before and len(DRAWN)==3
+        assert DRAWN[0][0].data['pos'][:2]==((400.,400.,0.),(500.,400.,0.))
+        assert len(DRAWN[1][0].data['pos'])==10,'Target edge plus diamond marker'
+        assert DRAWN[1][1]['color']==(.15,1.,.8,1.)
+        assert DRAWN[2][0].data['pos']==((440.,300.,0.),(440.,400.,0.))
+        FAIL['draw']=True
+        try:ot.outline_pick.draw_feedback(hit,region,None,'test')
+        except RuntimeError:pass
+        else:raise AssertionError('Expected draw failure')
+        finally:FAIL['draw']=False
+        assert state_tuple()==before
+    return {'target_edge_diamond_measurement_label':True,'high_contrast_understroke':True,'GPU_state_restored':True}
+
+
 ot.register()
 try:
     with patch.dict(sys.modules, {'gpu':gpu,'gpu_extras':extras,'gpu_extras.batch':batch_module,'blf':blf}), \
@@ -304,6 +327,7 @@ try:
         run('empty and failed outline preview', empty_and_error)
         run('draw callback guards', guards)
         run('hint uses actual registered settings and unit formatter', hint_real_properties)
+        run('visible target edge, snap marker and distance feedback', snap_feedback)
 finally:
     ot.unregister()
 

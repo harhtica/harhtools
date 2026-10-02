@@ -1,5 +1,24 @@
 # Release verification
 
+## Version 1.13.0
+
+- Safe Inset regressions cover exact collapse widths, narrow necks splitting,
+  holes closing, borders meeting, outward island merging, sharp cusps, round
+  joins and transformed inputs. Decreasing width restores the original detail.
+- Mesh checks preserve boundary coordinates, validate area and edge incidence,
+  and extrude the resolved border into a watertight solid. Native bevel preview
+  still evaluates and cleans up its temporary data after topology changes.
+- Edge copying checks world length under nonuniform scale and rotation, selected
+  edges, hidden/locked/stale targets, cancellation and nesting inside Make Outline.
+  Copying changes only the thickness setting; scene geometry stays untouched.
+- Snap tests cover the wider capture radius and exact highlight geometry.
+  Mocked event tests verify coalesced hover/drag checks and no mesh rebuild on
+  hover. GPU submission tests verify the target line, diamond, measurement and
+  label; a separate native GPU offscreen render confirmed the visible feedback
+  inside Blender 5.2. This is not an end-to-end physical mouse/FPS benchmark.
+- Existing outline geometry, mesh, snapping, bevel, preview, tool, draw and
+  live-reload suites pass alongside the new collision and picker suites.
+
 ## Version 1.12.3
 
 - Eight relevant Blender 5.2 suites passed: real arc operator lifecycle,

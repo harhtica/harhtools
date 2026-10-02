@@ -375,7 +375,19 @@ def _trim_offset_overruns(loop,orientation,epsilon,max_trim_distance,original=No
     if (_area(result)>0)!=(orientation>0):result.reverse()
     return result,True
 
-def build_outline(prepared,thickness,*,direction='INWARD',join_style='ROUND'):
+def build_outline(prepared,thickness,*,direction='INWARD',join_style='ROUND',safe_inset=False):
+    try:
+        result=_build_outline_strict(prepared,thickness,direction=direction,join_style=join_style)
+        result['safe_inset']=bool(safe_inset)
+        return result
+    except ValueError as exc:
+        collision = str(exc).startswith('Thickness') or 'collapsed or zero-area loop' in str(exc)
+        if not safe_inset or not collision or 'sampling precision' in str(exc):raise
+        from . import outline_safe
+        return outline_safe.build(prepared,float(thickness),direction.upper(),join_style.upper())
+
+
+def _build_outline_strict(prepared,thickness,*,direction='INWARD',join_style='ROUND'):
     """Build a validated border result; creates no Blender datablocks.
 
     Topology-changing offsets (collapsed tips, merged holes, self-crossings) are

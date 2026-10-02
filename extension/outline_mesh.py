@@ -144,13 +144,19 @@ def _miter_seams(source,offset,distance,epsilon):
 
 
 def _triangulate_ring(source, offset, epsilon, seams=()):
-    original=source+offset;n=len(source)
+    return _triangulate_boundaries([source,offset],epsilon,[(i,len(source)+j) for i,j in seams],len(source))
+
+
+def _triangulate_boundaries(loops,epsilon,seams=(),split=None):
+    original=[];edges=[]
+    for loop in loops:
+        base=len(original);original.extend(loop)
+        edges.extend((base+i,base+(i+1)%len(loop)) for i in range(len(loop)))
+    if split is None:split=len(loops[0])
     center=tuple(math.fsum(p[i] for p in original)/len(original) for i in range(2))
     scale=max(math.dist(p,center) for p in original)
-    edges=[(i,(i+1)%n) for i in range(n)]
-    edges.extend((n+i,n+(i+1)%len(offset)) for i in range(len(offset)))
     boundary_edges=list(edges)
-    edges.extend((i,n+j) for i,j in seams)
+    edges.extend(seams)
     normalized=[Vector(((p[0]-center[0])/scale,(p[1]-center[1])/scale)) for p in original]
     coords,_,triangles,orig_vertices,_,_=delaunay_2d_cdt(normalized,edges,[],0,epsilon/scale,True)
     vertices=[];old_to_new={};boundary_side={}
@@ -159,17 +165,20 @@ def _triangulate_ring(source, offset, epsilon, seams=()):
             raise ValueError('Outline boundary points are too close to mesh reliably. Increase sampling tolerance.')
         if ids:
             old=ids[0];vertices.append(original[old]);old_to_new[old]=index
-            boundary_side[index]=0 if old<n else 1
+            boundary_side[index]=0 if old<split else 1
         else:vertices.append((center[0]+co[0]*scale,center[1]+co[1]*scale))
     if len(old_to_new)!=len(original):
         raise ValueError('The mesh triangulator could not preserve every outline boundary point.')
-    in_source,in_offset=_membership_index(source),_membership_index(offset)
+    membership=[_membership_index(loop) for loop in loops]
     faces=[]
     for triangle in triangles:
         triangle=list(triangle)
+        # Restoring exact boundary coordinates can turn CDT's float32 slivers
+        # along collinear outer edges back into zero-area triangles.
+        if abs(_signed_area(vertices,triangle))<=max(epsilon*epsilon,scale*scale*1e-14):continue
         center=tuple(math.fsum(vertices[v][axis] for v in triangle)/len(triangle) for axis in range(2))
-        if in_source(center)!=in_offset(center):faces.append(_ccw(vertices,triangle))
-    protected={tuple(sorted((old_to_new[i],old_to_new[n+j]))) for i,j in seams}
+        if sum(inside(center) for inside in membership)%2:faces.append(_ccw(vertices,triangle))
+    protected={tuple(sorted((old_to_new[i],old_to_new[j]))) for i,j in seams}
     faces=_merge_triangles(vertices,faces,epsilon,boundary_side,protected)
     if not protected <= set(_edge_faces(faces)):
         raise ValueError('The outline mesh could not preserve a miter corner seam.')
@@ -177,7 +186,7 @@ def _triangulate_ring(source, offset, epsilon, seams=()):
     return vertices,faces,boundary
 
 
-def _validate(vertices,faces,boundary,expected_area,epsilon):
+def _validate(vertices,faces,boundary,expected_area,epsilon,euler_characteristic=0):
     if not faces or any(len(face) not in (3,4) or len(set(face))!=len(face) for face in faces):
         raise ValueError('The border could not be made into clean mesh faces.')
     used={v for face in faces for v in face}
@@ -191,12 +200,45 @@ def _validate(vertices,faces,boundary,expected_area,epsilon):
         raise ValueError('The outline mesh would contain a collapsed face.')
     if abs(math.fsum(areas)-expected_area)>max(expected_area*2e-6,epsilon*epsilon*len(faces)*4):
         raise ValueError('The outline mesh would overlap or leave gaps in the border.')
-    if len(vertices)-len(edges)+len(faces)!=0:
-        raise ValueError('The outline mesh would change the hollow border topology.')
+    if len(vertices)-len(edges)+len(faces)!=euler_characteristic:
+        raise ValueError('The outline mesh would change the resolved border topology.')
+
+
+def _adaptive_mesh(result):
+    sources=result['source_loops'];offsets=result['offset_loops'];loops=sources+offsets
+    original=[tuple(p) for loop in loops for p in loop]
+    extent=max(max(p[axis] for p in original)-min(p[axis] for p in original) for axis in range(2))
+    epsilon=max(extent*1e-9,1e-11);seams=[]
+    if result.get('join_style')=='MITER':
+        boundary_edges=[(a,b) for loop in loops for a,b in zip(loop,loop[1:]+loop[:1])]
+        membership=[_membership_index(loop) for loop in loops]
+        distance=result['thickness']*(1 if result['direction']=='INWARD' else -1)
+        source_base=0
+        for source in sources:
+            offset_base=sum(map(len,sources))
+            for offset in offsets:
+                for i,j in _miter_seams(source,offset,distance,epsilon):
+                    a,b=source[i],offset[j]
+                    if any(geometry._point_segment_sq(p,a,b)<=epsilon*epsilon for p in original if p!=a and p!=b):continue
+                    if any(geometry._segment_distance_sq(a,b,c,d)<=epsilon*epsilon for c,d in boundary_edges if a not in (c,d) and b not in (c,d)):continue
+                    if any(sum(inside(geometry._add(a,geometry._mul(geometry._sub(b,a),t))) for inside in membership)%2==0 for t in (.1,.5,.9)):continue
+                    if any(geometry._segment_distance_sq(a,b,original[c],original[d])<=epsilon*epsilon for c,d in seams):continue
+                    seams.append((source_base+i,offset_base+j))
+                offset_base+=len(offset)
+            source_base+=len(source)
+    vertices,faces,boundary=_triangulate_boundaries(loops,epsilon,seams,sum(map(len,sources)))
+    expected_area=math.fsum(geometry._area(loop) for loop in result['border_loops'])
+    euler=sum(1 if geometry._area(loop)>0 else -1 for loop in result['border_loops'])
+    _validate(vertices,faces,boundary,expected_area,epsilon,euler)
+    return {'vertices':[(x,y,0.) for x,y in vertices],'faces':faces,'diagnostics':{
+        'quad_faces':sum(len(face)==4 for face in faces),'triangle_faces':sum(len(face)==3 for face in faces),
+        'direct_quad_rings':0,'triangulated_rings':len(loops),'boundary_rings':len(loops),
+        'loose_vertices':0,'protected_miter_seams':len(seams),'adaptive_topology':True}}
 
 
 def build_mesh(result):
     """Return validated local-XY vertices/faces; no Blender data is changed."""
+    if result.get('adaptive_topology'):return _adaptive_mesh(result)
     sources=result['source_loops'];offsets=result['offset_loops']
     if len(sources)!=len(offsets) or not sources:
         raise ValueError('Each outline source needs its matching offset boundary.')

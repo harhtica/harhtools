@@ -4,7 +4,7 @@ import time
 import bpy
 from mathutils import Vector
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty
-from . import outline_geometry, outline_snap, outline_profiles, shortcuts, display_units, profile_editor
+from . import outline_geometry, outline_snap, outline_profiles, outline_pick, shortcuts, display_units, profile_editor
 
 STATE_KEY = 'harhtools_outline_preview'
 PREVIEW_INTERVAL = 1 / 30
@@ -53,6 +53,8 @@ class HARHTOOLS_PG_outline(bpy.types.PropertyGroup):
         ('CURVE', 'Curve Outline', 'A filled outline with sampled Poly spline boundaries')], update=_changed)
     snap_geometry: BoolProperty(name='Snap to Geometry', default=False,
                                 description='Snap thickness to nearby coplanar curves and mesh edges while dragging', update=_snap_changed)
+    safe_inset: BoolProperty(name='Safe Inset', default=True,
+                             description='Merge crowded sections at collisions; reducing thickness restores detail from the original shape', update=_changed)
     hide_sources: BoolProperty(name='Hide Original Shapes', default=True,
                                description='Keep the original shapes recoverable but hide their filled centers after creating outlines')
     bevel_enabled: BoolProperty(name='Add Bevel', default=False,
@@ -106,8 +108,8 @@ def prepare_selection(context):
     return objects, prepared
 
 
-def make_results(prepared, thickness, direction, join_style='ROUND'):
-    return [outline_geometry.build_outline(item, thickness, direction=direction, join_style=join_style) for item in prepared]
+def make_results(prepared, thickness, direction, join_style='ROUND', *, safe_inset=False):
+    return [outline_geometry.build_outline(item, thickness, direction=direction, join_style=join_style, safe_inset=safe_inset) for item in prepared]
 
 
 def commit_outlines(context, sources, results, expected_signature, *, hide_sources=True, output_type='CURVE', bevel_options=None):
@@ -273,13 +275,13 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
     def poll(cls, context):
         return (context.mode == 'OBJECT' and context.active_object is not None
                 and not any(bpy.app.driver_namespace.get(key) for key in
-                    (STATE_KEY, 'arch_tools_shape_builder', 'harhtools_array_preview')))
+                    (STATE_KEY, outline_pick.STATE_KEY, 'arch_tools_shape_builder', 'harhtools_array_preview')))
 
     def execute(self, context):
         try:
             sources, prepared = prepare_selection(context)
             cfg = settings(context)
-            results = make_results(prepared, cfg.thickness, cfg.direction, cfg.join_style)
+            results = make_results(prepared, cfg.thickness, cfg.direction, cfg.join_style, safe_inset=cfg.safe_inset)
             outputs = commit_outlines(context, sources, results, source_signature(sources),
                                       hide_sources=cfg.hide_sources, output_type=cfg.output_type, bevel_options=bevel_options(cfg))
             self.report({'INFO'}, f'Created {len(outputs)} outline(s). Shape Library saves only with +.')
@@ -303,7 +305,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         self._region = next(r for r in self._area.regions if r.type == 'WINDOW')
         self._view = self._area.spaces.active.region_3d
         cfg = settings(context)
-        self._original_settings = {name:getattr(cfg,name) for name in ('thickness','direction','snap_geometry','join_style','output_type',
+        self._original_settings = {name:getattr(cfg,name) for name in ('thickness','direction','snap_geometry','safe_inset','join_style','output_type',
             'bevel_enabled','bevel_depth','bevel_width','bevel_segments','bevel_profile','bevel_shape')}
         try:
             self._sources, self._prepared = prepare_selection(context)
@@ -320,7 +322,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             self._snap = outline_snap.OutlineSnapCache(context,
                 first.get('_origin64', first['origin']), first.get('_normal64', first['normal']),
                 max(item['scale'] for item in self._prepared), self._world_loops,
-                excluded_objects=self._sources, lazy_targets=not cfg.snap_geometry,
+                excluded_objects=self._sources, lazy_targets=not cfg.snap_geometry, pixel_tolerance=22.,
                 source_segments=[dict(segment, owner=index) for index, item in enumerate(self._prepared)
                                  for segment in item['world_segments']])
             bpy.app.driver_namespace[STATE_KEY] = self
@@ -343,7 +345,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         if self._done:
             return
         self._snap_hit = None; self._measure = None
-        if self._dragging and self._last_mouse is not None:
+        if self._last_mouse is not None:
             self._pending_mouse = self._last_mouse
         self._area.tag_redraw()
 
@@ -364,7 +366,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         if self._done:
             return
         cfg = settings(context)
-        outline_key = (float(cfg.thickness), cfg.direction, cfg.join_style)
+        outline_key = (float(cfg.thickness), cfg.direction, cfg.join_style, cfg.safe_inset)
         bevel = bevel_options(cfg)
         key = (outline_key, tuple(sorted(bevel.items())) if bevel else None)
         self._preview_dirty = False
@@ -375,7 +377,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             if outline_key != getattr(self,'_outline_key',None):
                 prepared = [preview if cfg.thickness > preview['tolerance'] * 8 else precise
                             for preview, precise in zip(self._preview_prepared, self._prepared)]
-                self._results = make_results(prepared, cfg.thickness, cfg.direction, cfg.join_style)
+                self._results = make_results(prepared, cfg.thickness, cfg.direction, cfg.join_style, safe_inset=cfg.safe_inset)
                 self._outline_key = outline_key
             self._surface = None
             if bevel:
@@ -385,7 +387,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         except Exception as exc:
             self._results = []; self._surface = None; self._outline_key=None; self._error = str(exc)
         self._batches = None; self._surface_batch=None
-        self._workspace.status_text_set('Make Outline | Drag: thickness | S: geometry snap | Enter / Ctrl+A: apply | Esc: cancel'
+        self._workspace.status_text_set('Make Outline | Drag: thickness | S: snap | C: copy edge length | Enter / Ctrl+A: apply | Esc: cancel'
             + (' | ' + self._error if self._error else ''))
         self._area.tag_redraw()
 
@@ -407,6 +409,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         xy = Vector((event.mouse_x - self._region.x, event.mouse_y - self._region.y))
         point = self._plane_point(xy)
         if point is None:
+            self._snap_hit=None;self._measure=None;self._area.tag_redraw()
             return
         cfg = settings(context)
         def eligible(world):
@@ -441,6 +444,8 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
     def modal(self, context, event):
         if self._done:
             return {'CANCELLED'}
+        if bpy.app.driver_namespace.get(outline_pick.STATE_KEY):
+            return {'PASS_THROUGH'}  # The edge picker owns this interaction.
         if self._area.type != 'VIEW_3D' or context.mode != 'OBJECT':
             self.finish(context, cancel=True); return {'CANCELLED'}
         if event.type == 'TIMER':
@@ -456,6 +461,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
         if self.over_controls(event):
             self._dragging = False
             self._pending_mouse = None
+            self._snap_hit = None; self._measure = None
             return {'PASS_THROUGH'}
         if event.type == 'RIGHTMOUSE' and event.value == 'PRESS':
             self.finish(context, cancel=True); return {'CANCELLED'}
@@ -465,7 +471,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
                 # validate the CURRENT precise shape, not a stale preview error.
                 self.flush_pending(context, preview=False)
                 cfg = settings(context)
-                results = make_results(self._prepared, cfg.thickness, cfg.direction, cfg.join_style)
+                results = make_results(self._prepared, cfg.thickness, cfg.direction, cfg.join_style, safe_inset=cfg.safe_inset)
                 outputs = commit_outlines(context, self._sources, results, self._signature,
                                           hide_sources=cfg.hide_sources, output_type=cfg.output_type, bevel_options=bevel_options(cfg))
             except Exception as exc:
@@ -479,8 +485,12 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             if self._dragging:
                 self.queue_pointer(event)
             return {'RUNNING_MODAL'}
+        if event.type == 'C' and event.value == 'PRESS':
+            bpy.ops.view3d.harhtools_copy_thickness('INVOKE_DEFAULT')
+            return {'RUNNING_MODAL'}
         if event.type in {'MIDDLEMOUSE', 'WHEELUPMOUSE', 'WHEELDOWNMOUSE', 'TRACKPADPAN', 'TRACKPADZOOM', 'NDOF_MOTION'}:
-            self._dragging = False; self._pending_mouse = None; return {'PASS_THROUGH'}
+            self._dragging = False; self._pending_mouse = None; self._snap_hit = None; self._measure = None
+            return {'PASS_THROUGH'}
         if event.type == 'LEFTMOUSE':
             if event.value == 'PRESS':
                 self._dragging = True
@@ -493,7 +503,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
                 self._dragging = False
             return {'RUNNING_MODAL'}
         if event.type == 'MOUSEMOVE':
-            if self._dragging:
+            if self._dragging or settings(context).snap_geometry:
                 self.queue_pointer(event)
             return {'RUNNING_MODAL'}
         return {'RUNNING_MODAL'}
@@ -537,7 +547,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
             gpu.state.blend_set(old_blend); gpu.state.depth_test_set(old_depth); gpu.state.depth_mask_set(old_mask)
 
     def draw_hint(self):
-        if self._done or bpy.context.area != self._area:
+        if self._done or bpy.context.area != self._area or bpy.app.driver_namespace.get(outline_pick.STATE_KEY):
             return
         import blf
         cfg = settings(); scale = bpy.context.preferences.system.ui_scale
@@ -546,6 +556,11 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
                    f'Thickness {width} | Snap {"ON" if cfg.snap_geometry else "OFF"} (S) | Drag to adjust | Enter / Ctrl+A to apply')
         if self._snap_hit:
             message += ' | ' + self._snap_hit['object_name']
+            if 'target_world_points' in self._snap_hit:
+                label=('Snapped' if self._dragging else 'Snap target')+' · '+self._snap_hit['object_name']+' · '+display_units.format_length(bpy.context,self._snap_hit['thickness'])
+                outline_pick.draw_feedback(self._snap_hit,self._region,self._view,label,self._measure)
+        if not self._error and any(r.get('adaptive_topology') for r in self._results):
+            message += ' | Safe Inset: crowded sections merged'
         blf.size(0, round(13 * scale)); blf.position(0, 20 * scale, 28 * scale, 0)
         blf.color(0, *(shortcuts.settings().remove_color if self._error else shortcuts.settings().light_color), 1)
         blf.draw(0, message)
@@ -579,6 +594,7 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
 
 
 def cancel_running(*_args):
+    outline_pick.cancel_running()
     state = bpy.app.driver_namespace.get(STATE_KEY)
     if state:
         state.finish()
@@ -587,8 +603,11 @@ def cancel_running(*_args):
 def draw_panel(layout, context):
     box = layout.box(); box.label(text='Make Outline')
     cfg = settings(context); state = bpy.app.driver_namespace.get(STATE_KEY)
-    display_units.draw(box,cfg,'thickness',context); box.prop(cfg, 'direction')
+    display_units.draw(box,cfg,'thickness',context)
+    box.operator('view3d.harhtools_copy_thickness',text='Copy Thickness',icon='EYEDROPPER')
+    box.prop(cfg, 'direction')
     box.prop(cfg, 'join_style'); box.prop(cfg, 'output_type')
+    box.prop(cfg, 'safe_inset')
     box.prop(cfg, 'snap_geometry'); box.prop(cfg, 'hide_sources')
     row = box.row(); row.enabled = state is None
     row.operator('view3d.harhtools_make_outline', text='Make Outline', icon='MOD_SOLIDIFY')
@@ -604,7 +623,7 @@ def draw_panel(layout, context):
     if context.mode != 'OBJECT':
         box.label(text='Select closed shapes in Object Mode.')
     elif state:
-        box.label(text='Drag: thickness; S: snap on/off')
+        box.label(text='Drag: thickness; S: snap; C: copy')
         box.label(text='Enter / Ctrl+A: apply; Esc: cancel')
         if state._error:
             box.label(text='Reduce thickness or repair the shape.', icon='ERROR')
@@ -620,7 +639,7 @@ def initialize_bevel_ui():
 
 
 def register():
-    for cls in (HARHTOOLS_PG_outline, VIEW3D_OT_harhtools_make_outline, OBJECT_OT_harhtools_border_bevel):
+    for cls in (HARHTOOLS_PG_outline, VIEW3D_OT_harhtools_make_outline, OBJECT_OT_harhtools_border_bevel, outline_pick.VIEW3D_OT_harhtools_copy_thickness):
         bpy.utils.register_class(cls)
     bpy.types.WindowManager.harhtools_outline = PointerProperty(type=HARHTOOLS_PG_outline)
     bpy.app.handlers.load_pre.append(cancel_running)
@@ -640,6 +659,6 @@ def unregister():
         bpy.app.handlers.load_pre.remove(cancel_running)
     if hasattr(bpy.types.WindowManager, 'harhtools_outline'):
         del bpy.types.WindowManager.harhtools_outline
-    for cls in (OBJECT_OT_harhtools_border_bevel, VIEW3D_OT_harhtools_make_outline, HARHTOOLS_PG_outline):
+    for cls in (outline_pick.VIEW3D_OT_harhtools_copy_thickness, OBJECT_OT_harhtools_border_bevel, VIEW3D_OT_harhtools_make_outline, HARHTOOLS_PG_outline):
         if cls.is_registered:
             bpy.utils.unregister_class(cls)

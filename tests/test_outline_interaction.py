@@ -110,9 +110,9 @@ fake_bpy = SimpleNamespace(app=bpy.app, context=context, utils=bpy.utils,
 real_make = ot.make_results
 build_calls = []
 commit_calls = []
-def counted_make(prepared, thickness, direction, join_style='ROUND'):
+def counted_make(prepared, thickness, direction, join_style='ROUND', **kwargs):
     build_calls.append((prepared, float(thickness), direction))
-    return real_make(prepared, thickness, direction, join_style)
+    return real_make(prepared, thickness, direction, join_style, **kwargs)
 def counted_commit(ctx, sources, results, signature, **kwargs):
     commit_calls.append((results, signature, kwargs))
     return [source]
@@ -164,7 +164,9 @@ try:
             assert h.modal(context, event(x=100 + index)) == {'RUNNING_MODAL'}
         STATS['idle_500_events_ms'] = (time.perf_counter() - started) * 1000
         assert len(build_calls) == start_builds and h._snap.queries == start_queries
-        CHECKS.append('idle hover performs no snap query or geometry rebuild')
+        tick(h)
+        assert h._snap.queries==start_queries+1 and len(build_calls)==start_builds
+        CHECKS.append('hover coalesces to one snap query per tick without a geometry rebuild')
 
         h.modal(context, event('LEFTMOUSE', 'PRESS', 800))
         tick(h)  # Establish the next allowed refresh deadline before the burst.
@@ -221,7 +223,13 @@ try:
         cfg.bevel_enabled=False;tick(h);assert h._surface is None and len(build_calls)==start_builds
         CHECKS.append('native live bevel responds to all controls, reuses outline geometry and does no idle evaluation')
 
-        cfg.thickness = 1.2
+        cfg.safe_inset=True;cfg.thickness=1.2;tick(h)
+        assert not h._error and h._results[0]['diagnostics']['collapsed_interior']
+        cfg.thickness=.2;tick(h)
+        assert not h._error and len(h._results[0]['offset_loops'])==1
+        CHECKS.append('Safe Inset preview closes crowded sections and restores detail from the unchanged source')
+
+        cfg.safe_inset=False;cfg.thickness = 1.2
         tick(h)
         assert h._error and not h._results
         error = h._error; start_builds = len(build_calls)

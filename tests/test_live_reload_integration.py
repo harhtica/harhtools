@@ -138,6 +138,7 @@ try:
     wm.harhtools_outline.thickness = .375
     wm.harhtools_outline.direction = 'OUTWARD'
     wm.harhtools_outline.snap_geometry = True
+    wm.harhtools_outline.safe_inset = False
     wm.harhtools_distance_units='SCENE'
     wm.harhtools_outline.bevel_profile='TORUS'
     working=package.profile_editor.start(wm.harhtools_outline)
@@ -156,6 +157,8 @@ try:
     assert_scene_settings()
     assert wm.harhtools_outline.thickness == .375
     assert wm.harhtools_outline.direction == 'OUTWARD' and wm.harhtools_outline.snap_geometry
+    assert not wm.harhtools_outline.safe_inset
+    assert bpy.types.VIEW3D_OT_harhtools_copy_thickness.is_registered
     assert wm.harhtools_outline.edited_profile==working
     assert package.profile_editor.serialize(working)==profile_data
     assert wm.harhtools_distance_units=='SCENE' and not wm.harhtools_edit_arc.match_spacing

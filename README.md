@@ -4,7 +4,19 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.12.3
+## Version 1.13.0
+
+- **Safe Inset** is on by default. Tight corners and narrow sections can close,
+  split or merge as thickness changes. Lowering the width during preview restores
+  detail from the original boundary. Resolved borders remain editable mesh faces.
+- Geometry snapping catches within 22 UI pixels and works on hover as well as
+  during dragging. A green edge highlight, contact marker, measurement line and
+  label identify the target. Pointer checks are coalesced without idle mesh rebuilds.
+- **Copy Thickness**, beside the width field, picks the world-space length of a
+  mesh edge or straight Poly segment. Press **C** during Make Outline to sample
+  an existing border's cross edge, then keep adjusting the same preview.
+
+## Included from 1.12.3
 
 - Fixes the Selected Arc sidebar disappearing after Undo or an interrupted tool.
   Expired Blender operator references are released, and the start button returns.
@@ -120,7 +132,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.12.3](https://harhtica.github.io/harhtools/harhtools-1.12.3.zip), or use
+[Download 1.13.0](https://harhtica.github.io/harhtools/harhtools-1.13.0.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).
