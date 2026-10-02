@@ -54,7 +54,7 @@ class HARHTOOLS_PG_outline(bpy.types.PropertyGroup):
     snap_geometry: BoolProperty(name='Snap to Geometry', default=False,
                                 description='Snap thickness to nearby coplanar curves and mesh edges while dragging', update=_snap_changed)
     safe_inset: BoolProperty(name='Safe Inset', default=True,
-                             description='Merge crowded sections at collisions; reducing thickness restores detail from the original shape', update=_changed)
+                             description='Sharp outlines narrow locally at tight corners to keep connected quad rows; round joins can merge crowded sections', update=_changed)
     hide_sources: BoolProperty(name='Hide Original Shapes', default=True,
                                description='Keep the original shapes recoverable but hide their filled centers after creating outlines')
     bevel_enabled: BoolProperty(name='Add Bevel', default=False,
@@ -561,6 +561,8 @@ class VIEW3D_OT_harhtools_make_outline(bpy.types.Operator):
                 outline_pick.draw_feedback(self._snap_hit,self._region,self._view,label,self._measure)
         if not self._error and any(r.get('adaptive_topology') for r in self._results):
             message += ' | Safe Inset: crowded sections merged'
+        elif not self._error and any(r.get('diagnostics',{}).get('locally_clamped_vertices') for r in self._results):
+            message += ' | Safe Inset: thickness narrows at tight corners'
         blf.size(0, round(13 * scale)); blf.position(0, 20 * scale, 28 * scale, 0)
         blf.color(0, *(shortcuts.settings().remove_color if self._error else shortcuts.settings().light_color), 1)
         blf.draw(0, message)

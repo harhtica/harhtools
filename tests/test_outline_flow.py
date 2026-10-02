@@ -1,4 +1,4 @@
-"""Collapsed borders retain local cross-strip edges, not remote triangle fans."""
+"""Locally narrowed borders retain normal cross-strip edges through every tip."""
 import bpy,bmesh,sys,math,time,json
 from pathlib import Path
 from collections import Counter
@@ -21,7 +21,7 @@ def verify(result):
     segments=[(tuple(a),tuple(b)) for loop in result['border_loops'] for a,b in zip(loop,loop[1:]+loop[:1])]
     expected={tuple(sorted(edge)) for a,b in segments for mid in [tuple((x+y)*.5 for x,y in zip(a,b))]
               for edge in ([(a,b)] if tuple(sorted((a,b))) in actual else [(a,mid),(mid,b)])}
-    assert built['diagnostics']['loop_cut_rings']==len(result['border_loops'])
+    assert built['diagnostics']['direct_quad_rings']==len(result['source_loops'])
     assert all(len(f)==4 for f in faces)
     assert actual==expected
     checked=0
@@ -52,7 +52,7 @@ for segments in (32,128):
     obj=source(loop);p=g.prepare_sources([obj]);snapshot=[tuple(v.co) for v in obj.data.vertices]
     for width in (.25,.4,.7):
         result=g.build_outline(p,width,join_style='MITER',safe_inset=True)
-        assert result.get('adaptive_topology') or any(result.get('offset_trimmed',()))
+        assert result['diagnostics']['locally_clamped_vertices']>0
         start=time.perf_counter();built,checked=verify(result);elapsed=time.perf_counter()-start
         reports.append(dict(segments=segments,width=width,normal_connections=checked,seconds=round(elapsed,4),**built['diagnostics']))
     assert snapshot==[tuple(v.co) for v in obj.data.vertices]

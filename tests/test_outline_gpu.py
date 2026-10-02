@@ -279,6 +279,9 @@ def hint_real_properties():
     FONT.clear()
     h.draw_hint()
     assert 'Snap OFF (S)' in next(args[1] for method,args in FONT if method == 'draw')
+    h._results[0]['diagnostics']={'locally_clamped_vertices':3}
+    FONT.clear();h.draw_hint()
+    assert 'Safe Inset: thickness narrows at tight corners' in next(args[1] for method,args in FONT if method=='draw')
     before = state_tuple()
     FAIL['font'] = True
     try:

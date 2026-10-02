@@ -4,7 +4,17 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.13.2
+## Version 1.14.0
+
+- Sharp **Safe Inset** now works like a normal Make Outline: one matching inner
+  vertex per outer vertex, connected by a single quad strip. **Ctrl+R** continues
+  around the whole border, including sharp tips.
+- Thickness narrows locally before tight corners or nearby boundaries collide.
+  The original perimeter stays fixed, full-width areas keep the ordinary offset,
+  and reducing thickness restores detail from the original source. The preview
+  reports local narrowing. Round joins retain the previous collision behavior.
+
+## Included from 1.13.2
 
 - Safe Inset collision meshes now have all-quad faces and a continuous quad row
   along every boundary. Hover that row with **Ctrl+R** to cut around the border,
@@ -150,7 +160,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.13.2](https://harhtica.github.io/harhtools/harhtools-1.13.2.zip), or use
+[Download 1.14.0](https://harhtica.github.io/harhtools/harhtools-1.14.0.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

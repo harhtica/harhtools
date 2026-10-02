@@ -18,7 +18,8 @@ def verify(result):
     built=m.build_mesh(result);faces=built['faces'];vertices=built['vertices'];diag=built['diagnostics']
     assert diag['triangle_faces']==0 and all(len(f)==4 for f in faces)
     adjacency=m._edge_faces(faces)
-    remaining=set(range(len(faces)-diag['loop_cut_faces'],len(faces)));routes=[]
+    assert diag['direct_quad_rings']==len(result['source_loops']) and diag['triangulated_rings']==0
+    remaining=set(range(len(faces)));routes=[]
     while remaining:
         first=min(remaining);f=faces[first];edge=tuple(sorted((f[0],f[3])))
         current=first;visited=set();route=[]
@@ -31,7 +32,8 @@ def verify(result):
             current=next(i for i in neighbors if i!=current)
         assert current==first and len(route)>=3
         remaining-=visited;routes.append(route)
-    assert len(routes)==diag['loop_cut_rings']==len(result['border_loops'])
+    assert len(routes)==len(result['source_loops'])
+    assert sorted(map(len,routes))==sorted(map(len,result['source_loops']))
     assert not m._crossing_edges([p[:2] for p in vertices],faces,1e-9)
     data=m.make_mesh_data(result)
     assert all(p.area>0 for p in data.polygons),'Float32 conversion collapsed a quad'
@@ -62,6 +64,6 @@ reports=[]
 for loops,width,direction in (([taper],.4,'INWARD'),([taper],.7,'INWARD'),([neck],.5,'INWARD'),
                               ([square],2.1,'INWARD'),([square,[(-.3,-.3),(.3,-.3),(.3,.3),(-.3,.3)]],.4,'OUTWARD')):
     result=g.build_outline(prepare(loops),width,direction=direction,join_style='MITER',safe_inset=True)
-    assert result.get('adaptive_topology') or any(result.get('offset_trimmed',()))
+    assert result['diagnostics']['locally_clamped_vertices']>0
     reports.append(verify(result))
 print(json.dumps(reports));print('NATIVE SAFE INSET LOOP CUTS PASS')

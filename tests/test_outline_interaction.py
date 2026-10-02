@@ -224,10 +224,11 @@ try:
         CHECKS.append('native live bevel responds to all controls, reuses outline geometry and does no idle evaluation')
 
         cfg.safe_inset=True;cfg.thickness=1.2;tick(h)
-        assert not h._error and h._results[0]['diagnostics']['collapsed_interior']
+        assert not h._error and h._results[0]['diagnostics']['locally_clamped_vertices']>0
+        assert len(h._results[0]['offset_loops'][0])==len(h._results[0]['source_loops'][0])
         cfg.thickness=.2;tick(h)
         assert not h._error and len(h._results[0]['offset_loops'])==1
-        CHECKS.append('Safe Inset preview closes crowded sections and restores detail from the unchanged source')
+        CHECKS.append('Sharp Safe Inset narrows crowded sections, preserves matching rows and restores detail from the unchanged source')
 
         cfg.safe_inset=False;cfg.thickness = 1.2
         tick(h)

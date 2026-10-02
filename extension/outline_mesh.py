@@ -3,8 +3,8 @@
 Unchanged miter offsets retain source-to-offset quad strips. Junctions that
 changed correspondence use constrained triangles, merged into convex quads
 where possible. Original boundary coordinates are never fitted or moved.
-Safe Inset collisions use continuous quad collars and all-quad junctions.
-The collars provide uninterrupted loop cuts even where a feature collapses.
+Sharp Safe Inset keeps matching quad strips by narrowing thickness locally.
+Legacy rounded collision results use quad collars around all-quad junctions.
 """
 import math
 from collections import defaultdict
@@ -501,6 +501,8 @@ def build_mesh(result):
                 except ValueError:pass
                 else:local_faces=candidate;direct+=1
         if local_faces is None:
+            if 'local_widths' in result:
+                raise ValueError('Unable to keep a clean quad strip at this thickness. Reduce thickness.')
             seams=_miter_seams(source,offset,result['thickness']*(1 if result['direction']=='INWARD' else -1),epsilon) if result.get('join_style')=='MITER' else []
             local_vertices,local_faces,boundary=_triangulate_ring(source,offset,epsilon,seams)
             _validate(local_vertices,local_faces,boundary,expected_area,epsilon)

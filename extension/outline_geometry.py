@@ -376,6 +376,9 @@ def _trim_offset_overruns(loop,orientation,epsilon,max_trim_distance,original=No
     return result,True
 
 def build_outline(prepared,thickness,*,direction='INWARD',join_style='ROUND',safe_inset=False):
+    if safe_inset and str(join_style).upper()=='MITER':
+        from . import outline_clamp
+        return outline_clamp.build(prepared,thickness,direction)
     try:
         result=_build_outline_strict(prepared,thickness,direction=direction,join_style=join_style)
         result['safe_inset']=bool(safe_inset)

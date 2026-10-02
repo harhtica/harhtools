@@ -1,11 +1,18 @@
-"""Collision events, restored detail and manifold editable border regressions."""
+"""Legacy topology-changing offsets remain valid for rounded Safe Inset joins.
+
+Sharp Safe Inset now uses local clamping; its normal flow and native loop cuts
+are covered separately. Keep the old collision mesher tested explicitly too.
+"""
 import sys, math, json
 from pathlib import Path
 from collections import Counter
 import bpy, bmesh
 from mathutils import Matrix, Euler
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
-from extension import outline_geometry as g, outline_mesh as m, outline_preview
+from extension import outline_geometry as g, outline_mesh as m, outline_preview, outline_safe
+
+def legacy_outline(prepared,width,*,direction='INWARD',join_style='MITER',safe_inset=True):
+    return outline_safe.build(prepared,width,direction,join_style)
 
 def prepare(loops,transform=None):
     mesh=bpy.data.meshes.new('Safe fixture');vertices=[];edges=[]
@@ -51,29 +58,29 @@ for name,loops,widths,direction,counts in cases:
     p=prepare(loops);before=repr(p['loops']);areas=[]
     for width,count in zip(widths,counts):
         print(name,width,flush=True)
-        r=g.build_outline(p,width,direction=direction,join_style='MITER',safe_inset=True)
+        r=legacy_outline(p,width,direction=direction,join_style='MITER',safe_inset=True)
         assert len(r['offset_loops'])==count,(name,width,len(r['offset_loops']),count)
         try:verify(r)
         except Exception:
             print(json.dumps(r['offset_loops']));raise
         areas.append(area(r['border_loops']))
     assert all(a<=b+1e-5 for a,b in zip(areas,areas[1:])),(name,areas)
-    restored=g.build_outline(p,widths[0],direction=direction,join_style='MITER',safe_inset=True)
+    restored=legacy_outline(p,widths[0],direction=direction,join_style='MITER',safe_inset=True)
     assert len(restored['offset_loops'])==counts[0] and repr(p['loops'])==before
     reports.append({'case':name,'border_areas':areas})
 transform=Matrix.Translation((321,-42,54))@Euler((.4,.8,-.7)).to_matrix().to_4x4()@Matrix.Diagonal((1.5,.75,1.,1.))
-p=prepare([neck],transform);verify(g.build_outline(p,.4,join_style='MITER',safe_inset=True))
+p=prepare([neck],transform);verify(legacy_outline(p,.4,join_style='MITER',safe_inset=True))
 # Sharp cusps, both corner styles, and native bevel evaluation after merging.
 spike=[(-3,-2),(3,-2),(3,0),(.1,0),(0,3),(-.1,0),(-3,0)]
 for join in ('MITER','ROUND'):
     for direction in ('INWARD','OUTWARD'):
-        p=prepare([spike]);first=g.build_outline(p,.04,direction=direction,join_style=join,safe_inset=True)
+        p=prepare([spike]);first=legacy_outline(p,.04,direction=direction,join_style=join,safe_inset=True)
         for width in (.1,.25,.6,1.1):
             print('spike',join,direction,width,flush=True)
-            result=g.build_outline(p,width,direction=direction,join_style=join,safe_inset=True);verify(result)
-        restored=g.build_outline(p,.04,direction=direction,join_style=join,safe_inset=True)
+            result=legacy_outline(p,width,direction=direction,join_style=join,safe_inset=True);verify(result)
+        restored=legacy_outline(p,.04,direction=direction,join_style=join,safe_inset=True)
         assert restored['offset_loops']==first['offset_loops']
-result=g.build_outline(prepare([neck]),.5,join_style='MITER',safe_inset=True)
+result=legacy_outline(prepare([neck]),.5,join_style='MITER',safe_inset=True)
 ids=(set(bpy.data.objects),set(bpy.data.meshes),set(bpy.data.scenes))
 surface=outline_preview.surface([result],dict(depth=.2,width=.03,profile='ROUND',segments=4))
 assert surface['pos'] and all(math.isfinite(v) for p in surface['pos'] for v in p)

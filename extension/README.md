@@ -1,11 +1,11 @@
-# harhtools 1.13.2
+# harhtools 1.14.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.13.2.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.14.0.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -242,16 +242,17 @@ Flat boundaries can be rotated or placed away from the world origin. Plane
 validation uses double-precision calculations and does not flatten source data.
 
 **Corners: Sharp** is the default. Adjacent parallel offset edges meet at a sharp
-point, keeping Gothic tips pointed. Acute tips extend to their proper intersection;
-they are not clamped or rounded. Choose **Round** for circular opening-corner joins.
+point, keeping Gothic tips pointed. Acute tips extend to their proper intersection.
+With Safe Inset enabled, thickness narrows locally where a full-width sharp offset
+would cross or collapse. Choose **Round** for circular opening-corner joins.
 
 **Result: Mesh Border** is the default. It creates connected border faces with
 consistent normals and aspect-preserving planar UVs, ready for mesh editing or
-extrusion. Corresponding boundaries form quad strips. Safe Inset collision meshes
-use all-quads with a continuous row along every boundary: hover that row with
-**Ctrl+R** for a closed loop cut through the narrow sections. Sharp points stay
-fixed. Junction interiors can still contain poles where topology changes, so a
-loop started inside those patches can stop. The center remains hollow. **Curve Outline** retains the
+extrusion. Sharp Safe Inset keeps one matching offset vertex per source vertex,
+forming an ordinary quad strip through every corner. Use **Ctrl+R** across the
+strip for a closed loop cut around the whole border. The source perimeter and
+sharp points stay fixed; the border gets thinner where space is limited. The
+center remains hollow. **Curve Outline** retains the
 previous filled POLY-curve output when a curve result is wanted. Sharp corner
 seams remain explicit even when cleanup changes the number of offset points.
 Existing results are not rewritten: regenerate an older border for this topology.
@@ -328,16 +329,14 @@ Bezier inputs are adaptively sampled with a recorded world-space error bound;
 the new offset is not an exact Bezier curve. Dense mesh/poly boundaries are simplified
 within the same recorded tolerance while preserving corners. Original source
 data stays intact. The preview uses lighter sampling; confirmation rebuilds at
-final precision. **Safe Inset** is on by default: crowded sections close and merge
-instead of overlapping. The remaining interior may split or disappear entirely.
-Every preview starts from the original boundary, so reducing thickness restores
-the detail. Regular areas retain quad strips; collision junctions use validated
-quad patches surrounded by continuous boundary rows. Some boundary edges gain
-an exact midpoint; their positions and sharp corners do not change. At collisions,
-cross-strip edges follow the local boundary
-normals and stop where sides meet, avoiding long fans to unrelated corners.
-Extra interior points can form short junctions; this does not change the perimeter.
-Originals remain recoverable after confirmation; the finished
+final precision. **Safe Inset** is on by default. With **Corners: Sharp**, it narrows
+thickness locally before corners or nearby boundaries collide. Matching inner and
+outer rows remain connected by quads; no triangle fans or interior junction poles
+are added. Full-width areas use the ordinary miter offset. Every preview starts
+from the original source, so reducing thickness restores its detail automatically.
+The preview status says when thickness narrows at tight corners. With **Corners:
+Round**, crowded sections can still close, split or merge, and resolved junctions
+can contain poles. Originals remain recoverable after confirmation; the finished
 mesh itself is not a procedural inset modifier. Turn Safe Inset off to reject
 widths that change the boundary topology. NURBS, open paths,
 nonplanar shapes and ambiguous intersecting source loops are not supported.
