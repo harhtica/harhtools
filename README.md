@@ -4,7 +4,15 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.13.0
+## Version 1.13.1
+
+- Fixes long diagonal face fans in collapsed Safe Inset sections. Cross-strip
+  edges now follow the original boundary normals and meet at local collision
+  junctions. Both topology changes and locally trimmed sharp tips use this flow.
+- Preserves the perimeter and normal quad strips. Short triangles remain where
+  topology changes; the generated border still supports depth and bevel profiles.
+
+## Included from 1.13.0
 
 - **Safe Inset** is on by default. Tight corners and narrow sections can close,
   split or merge as thickness changes. Lowering the width during preview restores
@@ -132,7 +140,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.13.0](https://harhtica.github.io/harhtools/harhtools-1.13.0.zip), or use
+[Download 1.13.1](https://harhtica.github.io/harhtools/harhtools-1.13.1.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

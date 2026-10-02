@@ -1,11 +1,11 @@
-# harhtools 1.13.0
+# harhtools 1.13.1
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.13.0.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.13.1.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -329,7 +329,10 @@ final precision. **Safe Inset** is on by default: crowded sections close and mer
 instead of overlapping. The remaining interior may split or disappear entirely.
 Every preview starts from the original boundary, so reducing thickness restores
 the detail. Regular areas retain quad strips; collision junctions use validated
-triangles and quads. Originals remain recoverable after confirmation; the finished
+triangles and quads. At collisions, cross-strip edges follow the local boundary
+normals and stop where sides meet, avoiding long fans to unrelated corners.
+Extra interior points can form short junctions; this does not change the perimeter.
+Originals remain recoverable after confirmation; the finished
 mesh itself is not a procedural inset modifier. Turn Safe Inset off to reject
 widths that change the boundary topology. NURBS, open paths,
 nonplanar shapes and ambiguous intersecting source loops are not supported.

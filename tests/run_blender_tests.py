@@ -26,6 +26,7 @@ TESTS = (
     'test_mocked_gpu_caches.py',
     'test_outline_geometry.py',
     'test_outline_safe.py',
+    'test_outline_flow.py',
     'test_outline_mesh.py',
     'test_outline_bevel.py',
     'test_outline_preview.py',

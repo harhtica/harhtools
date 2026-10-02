@@ -1,5 +1,19 @@
 # Release verification
 
+## Version 1.13.1
+
+- New tapered-border regressions require a short interior edge normal to each
+  smooth source vertex, including in collapsed tips. Checks cover two sampling
+  densities, three widths, detail restoration, native bevel preview, unchanged
+  boundaries, no crossing edges and watertight extrusion.
+- Existing Safe Inset tests cover exact collapse, split necks, merged holes and
+  islands, round joins, sharp corners and transformed inputs. Existing mesh,
+  outline, interaction, bevel and preview tests remain in the validation set.
+- A private reproduction of the reported shape was rebuilt and compared in a
+  native GPU wireframe render. Long fans became local cross-strip connections;
+  the source and resulting perimeter were preserved. The private geometry is
+  not included in this repository.
+
 ## Version 1.13.0
 
 - Safe Inset regressions cover exact collapse widths, narrow necks splitting,

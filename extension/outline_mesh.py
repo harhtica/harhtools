@@ -3,12 +3,15 @@
 Unchanged miter offsets retain source-to-offset quad strips. Junctions that
 changed correspondence use constrained triangles, merged into convex quads
 where possible. Original boundary coordinates are never fitted or moved.
+Safe Inset collisions retain normal cross-strip connections, terminated at
+local contacts, with extra interior junctions where the offset loses detail.
 """
 import math
 from collections import defaultdict
 
 import bpy
 from mathutils import Vector
+from mathutils.kdtree import KDTree
 from mathutils.geometry import delaunay_2d_cdt
 
 from . import outline_geometry as geometry
@@ -147,25 +150,27 @@ def _triangulate_ring(source, offset, epsilon, seams=()):
     return _triangulate_boundaries([source,offset],epsilon,[(i,len(source)+j) for i,j in seams],len(source))
 
 
-def _triangulate_boundaries(loops,epsilon,seams=(),split=None):
+def _triangulate_boundaries(loops,epsilon,seams=(),split=None,interior=()):
     original=[];edges=[]
     for loop in loops:
         base=len(original);original.extend(loop)
         edges.extend((base+i,base+(i+1)%len(loop)) for i in range(len(loop)))
+    boundary_count=len(original)
+    original.extend(interior)
     if split is None:split=len(loops[0])
     center=tuple(math.fsum(p[i] for p in original)/len(original) for i in range(2))
     scale=max(math.dist(p,center) for p in original)
     boundary_edges=list(edges)
     edges.extend(seams)
     normalized=[Vector(((p[0]-center[0])/scale,(p[1]-center[1])/scale)) for p in original]
-    coords,_,triangles,orig_vertices,_,_=delaunay_2d_cdt(normalized,edges,[],0,epsilon/scale,True)
+    coords,cdt_edges,triangles,orig_vertices,orig_edges,_=delaunay_2d_cdt(normalized,edges,[],0,epsilon/scale,True)
     vertices=[];old_to_new={};boundary_side={}
     for index,(co,ids) in enumerate(zip(coords,orig_vertices)):
         if len(ids)>1:
             raise ValueError('Outline boundary points are too close to mesh reliably. Increase sampling tolerance.')
         if ids:
             old=ids[0];vertices.append(original[old]);old_to_new[old]=index
-            boundary_side[index]=0 if old<split else 1
+            if old<boundary_count:boundary_side[index]=0 if old<split else 1
         else:vertices.append((center[0]+co[0]*scale,center[1]+co[1]*scale))
     if len(old_to_new)!=len(original):
         raise ValueError('The mesh triangulator could not preserve every outline boundary point.')
@@ -178,12 +183,127 @@ def _triangulate_boundaries(loops,epsilon,seams=(),split=None):
         if abs(_signed_area(vertices,triangle))<=max(epsilon*epsilon,scale*scale*1e-14):continue
         center=tuple(math.fsum(vertices[v][axis] for v in triangle)/len(triangle) for axis in range(2))
         if sum(inside(center) for inside in membership)%2:faces.append(_ccw(vertices,triangle))
-    protected={tuple(sorted((old_to_new[i],old_to_new[j]))) for i,j in seams}
+    # Collision rails can meet/cross at a junction. Keep every CDT subdivision
+    # of the constraint, rather than expecting one unsplit start-to-end edge.
+    protected={tuple(sorted(edge)) for edge,ids in zip(cdt_edges,orig_edges)
+               if any(i>=len(boundary_edges) for i in ids)}
     faces=_merge_triangles(vertices,faces,epsilon,boundary_side,protected)
     if not protected <= set(_edge_faces(faces)):
         raise ValueError('The outline mesh could not preserve a miter corner seam.')
     boundary={tuple(sorted((old_to_new[a],old_to_new[b]))) for a,b in boundary_edges}
     return vertices,faces,boundary
+
+
+def _first_contact(point,velocity,width,segments,epsilon):
+    """First time a competing finite edge comes closer than the moving inset.
+
+    A miter ray is p(t)=point+t*velocity. Solve distance(p(t), edge)^2=t^2
+    on the segment interior and its two endpoint regions. The earliest entering
+    root terminates the rail on the local collision ridge, not a distant corner.
+    """
+    stop=width
+    speed2=geometry._dot(velocity,velocity)
+    for a,b in segments:
+        if point==a or point==b:continue
+        edge=geometry._sub(b,a);length=math.hypot(*edge)
+        if length<=epsilon:continue
+        delta=geometry._sub(point,a)
+        cross0=geometry._cross(edge,delta)/length
+        crossv=geometry._cross(edge,velocity)/length
+        candidates=[]
+        for sign in (-1,1):
+            denominator=sign-crossv
+            if abs(denominator)>1e-14:
+                t=cross0/denominator
+                if epsilon<t<stop:
+                    hit=geometry._add(point,geometry._mul(velocity,t))
+                    u=geometry._dot(geometry._sub(hit,a),edge)/(length*length)
+                    if 0<=u<=1 and 2*(cross0+crossv*t)*crossv-2*t < -epsilon:candidates.append(t)
+        for endpoint,is_end in ((a,False),(b,True)):
+            delta=geometry._sub(point,endpoint)
+            aa=speed2-1;bb=2*geometry._dot(delta,velocity);cc=geometry._dot(delta,delta)
+            if abs(aa)<1e-12:
+                roots=[-cc/bb] if abs(bb)>1e-14 else []
+            else:
+                discriminant=bb*bb-4*aa*cc
+                if discriminant<0:roots=[]
+                else:
+                    q=-.5*(bb+math.copysign(math.sqrt(discriminant),bb))
+                    roots=[q/aa,cc/q] if q else []
+            for t in roots:
+                if not epsilon<t<stop or 2*aa*t+bb>=-epsilon:continue
+                hit=geometry._add(point,geometry._mul(velocity,t))
+                u=geometry._dot(geometry._sub(hit,a),edge)/(length*length)
+                if (is_end and u>=1) or (not is_end and u<=0):candidates.append(t)
+        if candidates:stop=min(candidates)
+    return stop
+
+
+def _collision_rails(result,epsilon):
+    """Retain local normal connections through collapsed / trimmed sections."""
+    sources=result['source_loops'];offsets=result['offset_loops'];loops=sources+offsets
+    points=[tuple(p) for loop in loops for p in loop];boundary_count=len(points)
+    edge_tree=geometry._SegmentIndex(sources)
+    def competitors(a,b,width):
+        query=(min(a[0],b[0]),max(a[0],b[0]),min(a[1],b[1]),max(a[1],b[1]))
+        def nearby(bounds):
+            dx=max(0,bounds[0]-query[1],query[0]-bounds[1]);dy=max(0,bounds[2]-query[3],query[2]-bounds[3])
+            return dx*dx+dy*dy<=width*width
+        stack=[edge_tree.root]
+        while stack:
+            bounds,rows,left,right=stack.pop()
+            if not nearby(bounds):continue
+            if rows is None:stack.extend((left,right))
+            else:
+                for row in rows:
+                    if nearby(row) and geometry._segment_distance_sq(a,b,row[7],row[8])<=width*width:yield row[7],row[8]
+    width=result['thickness'];sign=1 if result['direction']=='INWARD' else -1
+    tolerance=max(epsilon*64,result['diagnostics']['source_chord_error_bound']*.01)
+    cells=defaultdict(list)
+    def cell(p):return tuple(math.floor(v/tolerance) for v in p)
+    for i,p in enumerate(points):cells[cell(p)].append(i)
+    def index(p):
+        x,y=cell(p)
+        nearby=[i for dx in (-1,0,1) for dy in (-1,0,1) for i in cells[x+dx,y+dy] if math.dist(p,points[i])<=tolerance]
+        if nearby:return min(nearby,key=lambda i:math.dist(p,points[i]))
+        i=len(points);points.append(p);cells[x,y].append(i);return i
+    seams=[];base=0
+    membership=[_membership_index(loop) for loop in loops]
+    for source in sources:
+        for i,p in enumerate(source):
+            incoming=geometry._sub(p,source[i-1]);outgoing=geometry._sub(source[(i+1)%len(source)],p)
+            incoming=geometry._mul(incoming,1/math.hypot(*incoming));outgoing=geometry._mul(outgoing,1/math.hypot(*outgoing))
+            den=1+geometry._dot(incoming,outgoing)
+            if den<=1e-10:continue
+            velocity=geometry._mul((-incoming[1]-outgoing[1],incoming[0]+outgoing[0]),sign/den)
+            end=geometry._add(p,geometry._mul(velocity,width))
+            # A spatial distance gate avoids solving every remote edge.
+            stop=_first_contact(p,velocity,width,competitors(p,end,width),epsilon)
+            end=geometry._add(p,geometry._mul(velocity,stop))
+            if math.dist(p,end)<=tolerance:continue
+            if any(sum(inside(geometry._add(p,geometry._mul(geometry._sub(end,p),t))) for inside in membership)%2==0 for t in (.1,.5,.9)):continue
+            j=index(end)
+            if j!=base+i:seams.append((base+i,j))
+        base+=len(source)
+    # Several rays may reach the same ridge at different positions. Explicitly
+    # split a longer rail at those existing points before float32 CDT; otherwise
+    # a nearly collinear junction becomes a paper-thin triangle / T-junction.
+    split=set()
+    point_tree=KDTree(len(points))
+    for i,p in enumerate(points):point_tree.insert((*p,0),i)
+    point_tree.balance()
+    for a,b in seams:
+        delta=geometry._sub(points[b],points[a]);length2=geometry._dot(delta,delta)
+        stops=[(0.,a),(1.,b)]
+        middle=geometry._mul(geometry._add(points[a],points[b]),.5)
+        for _,i,_ in point_tree.find_range((*middle,0),math.sqrt(length2)*.5+tolerance*2):
+            p=points[i]
+            if i in (a,b):continue
+            t=geometry._dot(geometry._sub(p,points[a]),delta)/length2
+            if 0<t<1 and geometry._point_segment_sq(p,points[a],points[b])<=tolerance*tolerance:stops.append((t,i))
+        stops.sort()
+        split.update(tuple(sorted((a[1],b[1]))) for a,b in zip(stops,stops[1:]) if a[1]!=b[1])
+    return sorted(split),points[boundary_count:]
 
 
 def _validate(vertices,faces,boundary,expected_area,epsilon,euler_characteristic=0):
@@ -209,36 +329,23 @@ def _adaptive_mesh(result):
     original=[tuple(p) for loop in loops for p in loop]
     extent=max(max(p[axis] for p in original)-min(p[axis] for p in original) for axis in range(2))
     epsilon=max(extent*1e-9,1e-11);seams=[]
+    interior=[]
     if result.get('join_style')=='MITER':
-        boundary_edges=[(a,b) for loop in loops for a,b in zip(loop,loop[1:]+loop[:1])]
-        membership=[_membership_index(loop) for loop in loops]
-        distance=result['thickness']*(1 if result['direction']=='INWARD' else -1)
-        source_base=0
-        for source in sources:
-            offset_base=sum(map(len,sources))
-            for offset in offsets:
-                for i,j in _miter_seams(source,offset,distance,epsilon):
-                    a,b=source[i],offset[j]
-                    if any(geometry._point_segment_sq(p,a,b)<=epsilon*epsilon for p in original if p!=a and p!=b):continue
-                    if any(geometry._segment_distance_sq(a,b,c,d)<=epsilon*epsilon for c,d in boundary_edges if a not in (c,d) and b not in (c,d)):continue
-                    if any(sum(inside(geometry._add(a,geometry._mul(geometry._sub(b,a),t))) for inside in membership)%2==0 for t in (.1,.5,.9)):continue
-                    if any(geometry._segment_distance_sq(a,b,original[c],original[d])<=epsilon*epsilon for c,d in seams):continue
-                    seams.append((source_base+i,offset_base+j))
-                offset_base+=len(offset)
-            source_base+=len(source)
-    vertices,faces,boundary=_triangulate_boundaries(loops,epsilon,seams,sum(map(len,sources)))
+        seams,interior=_collision_rails(result,epsilon)
+    vertices,faces,boundary=_triangulate_boundaries(loops,epsilon,seams,sum(map(len,sources)),interior)
     expected_area=math.fsum(geometry._area(loop) for loop in result['border_loops'])
     euler=sum(1 if geometry._area(loop)>0 else -1 for loop in result['border_loops'])
     _validate(vertices,faces,boundary,expected_area,epsilon,euler)
     return {'vertices':[(x,y,0.) for x,y in vertices],'faces':faces,'diagnostics':{
         'quad_faces':sum(len(face)==4 for face in faces),'triangle_faces':sum(len(face)==3 for face in faces),
         'direct_quad_rings':0,'triangulated_rings':len(loops),'boundary_rings':len(loops),
-        'loose_vertices':0,'protected_miter_seams':len(seams),'adaptive_topology':True}}
+        'loose_vertices':0,'protected_miter_seams':len(seams),'collision_rails':len(seams),'adaptive_topology':True}}
 
 
 def build_mesh(result):
     """Return validated local-XY vertices/faces; no Blender data is changed."""
-    if result.get('adaptive_topology'):return _adaptive_mesh(result)
+    if result.get('adaptive_topology') or (result.get('safe_inset') and result.get('join_style')=='MITER' and any(result.get('offset_trimmed',()))):
+        return _adaptive_mesh(result)
     sources=result['source_loops'];offsets=result['offset_loops']
     if len(sources)!=len(offsets) or not sources:
         raise ValueError('Each outline source needs its matching offset boundary.')
