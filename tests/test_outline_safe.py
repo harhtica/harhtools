@@ -24,8 +24,13 @@ def verify(result):
     counts=Counter(tuple(sorted((a,b))) for f in faces for a,b in zip(f,f[1:]+f[:1]))
     assert all(n in (1,2) for n in counts.values())
     assert all(len(f) in (3,4) for f in faces)
-    expected={tuple(sorted((tuple(a),tuple(b)))) for loop in result['border_loops'] for a,b in zip(loop,loop[1:]+loop[:1])}
+    segments=[(tuple(a),tuple(b)) for loop in result['border_loops'] for a,b in zip(loop,loop[1:]+loop[:1])]
+    expected={tuple(sorted((a,b))) for a,b in segments}
     actual={tuple(sorted((vertices[a][:2],vertices[b][:2]))) for (a,b),n in counts.items() if n==1}
+    if built['diagnostics'].get('loop_cut_rings'):
+        expected={tuple(sorted(edge)) for a,b in segments for mid in [tuple((x+y)*.5 for x,y in zip(a,b))]
+                  for edge in ([(a,b)] if tuple(sorted((a,b))) in actual else [(a,mid),(mid,b)])}
+        assert all(len(f)==4 for f in faces),'Safe Inset junctions must be quads'
     assert expected==actual,'Boundary changed'
     assert abs(sum(g._area([vertices[i] for i in f]) for f in faces)-area(result['border_loops']))<1e-5
     data=m.make_mesh_data(result);bm=bmesh.new();bm.from_mesh(data)
@@ -64,6 +69,7 @@ for join in ('MITER','ROUND'):
     for direction in ('INWARD','OUTWARD'):
         p=prepare([spike]);first=g.build_outline(p,.04,direction=direction,join_style=join,safe_inset=True)
         for width in (.1,.25,.6,1.1):
+            print('spike',join,direction,width,flush=True)
             result=g.build_outline(p,width,direction=direction,join_style=join,safe_inset=True);verify(result)
         restored=g.build_outline(p,.04,direction=direction,join_style=join,safe_inset=True)
         assert restored['offset_loops']==first['offset_loops']

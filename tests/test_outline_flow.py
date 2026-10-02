@@ -17,8 +17,13 @@ def verify(result):
     built=m.build_mesh(result);vertices=[p[:2] for p in built['vertices']];faces=built['faces']
     counts=Counter(tuple(sorted((a,b))) for f in faces for a,b in zip(f,f[1:]+f[:1]))
     boundary={edge for edge,n in counts.items() if n==1}
-    expected={tuple(sorted((tuple(a),tuple(b)))) for loop in result['border_loops'] for a,b in zip(loop,loop[1:]+loop[:1])}
-    assert {tuple(sorted((vertices[a],vertices[b]))) for a,b in boundary}==expected
+    actual={tuple(sorted((vertices[a],vertices[b]))) for a,b in boundary}
+    segments=[(tuple(a),tuple(b)) for loop in result['border_loops'] for a,b in zip(loop,loop[1:]+loop[:1])]
+    expected={tuple(sorted(edge)) for a,b in segments for mid in [tuple((x+y)*.5 for x,y in zip(a,b))]
+              for edge in ([(a,b)] if tuple(sorted((a,b))) in actual else [(a,mid),(mid,b)])}
+    assert built['diagnostics']['loop_cut_rings']==len(result['border_loops'])
+    assert all(len(f)==4 for f in faces)
+    assert actual==expected
     checked=0
     for loop in result['source_loops']:
         for i,p in enumerate(loop):

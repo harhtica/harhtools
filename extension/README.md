@@ -1,11 +1,11 @@
-# harhtools 1.13.1
+# harhtools 1.13.2
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.13.1.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.13.2.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -247,8 +247,11 @@ they are not clamped or rounded. Choose **Round** for circular opening-corner jo
 
 **Result: Mesh Border** is the default. It creates connected border faces with
 consistent normals and aspect-preserving planar UVs, ready for mesh editing or
-extrusion. Corresponding boundaries form quad strips; tight junctions use validated
-triangles where needed. The center remains hollow. **Curve Outline** retains the
+extrusion. Corresponding boundaries form quad strips. Safe Inset collision meshes
+use all-quads with a continuous row along every boundary: hover that row with
+**Ctrl+R** for a closed loop cut through the narrow sections. Sharp points stay
+fixed. Junction interiors can still contain poles where topology changes, so a
+loop started inside those patches can stop. The center remains hollow. **Curve Outline** retains the
 previous filled POLY-curve output when a curve result is wanted. Sharp corner
 seams remain explicit even when cleanup changes the number of offset points.
 Existing results are not rewritten: regenerate an older border for this topology.
@@ -329,7 +332,9 @@ final precision. **Safe Inset** is on by default: crowded sections close and mer
 instead of overlapping. The remaining interior may split or disappear entirely.
 Every preview starts from the original boundary, so reducing thickness restores
 the detail. Regular areas retain quad strips; collision junctions use validated
-triangles and quads. At collisions, cross-strip edges follow the local boundary
+quad patches surrounded by continuous boundary rows. Some boundary edges gain
+an exact midpoint; their positions and sharp corners do not change. At collisions,
+cross-strip edges follow the local boundary
 normals and stop where sides meet, avoiding long fans to unrelated corners.
 Extra interior points can form short junctions; this does not change the perimeter.
 Originals remain recoverable after confirmation; the finished

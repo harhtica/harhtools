@@ -3,8 +3,8 @@
 Unchanged miter offsets retain source-to-offset quad strips. Junctions that
 changed correspondence use constrained triangles, merged into convex quads
 where possible. Original boundary coordinates are never fitted or moved.
-Safe Inset collisions retain normal cross-strip connections, terminated at
-local contacts, with extra interior junctions where the offset loses detail.
+Safe Inset collisions use continuous quad collars and all-quad junctions.
+The collars provide uninterrupted loop cuts even where a feature collapses.
 """
 import math
 from collections import defaultdict
@@ -324,6 +324,136 @@ def _validate(vertices,faces,boundary,expected_area,epsilon,euler_characteristic
         raise ValueError('The outline mesh would change the resolved border topology.')
 
 
+def _quad_loop_layout(vertices,faces,width,epsilon):
+    """Add a continuous quad row at every boundary; quadrangulate the core.
+
+    Subdividing triangles alone creates three-valence poles that stop a loop
+    cut. An explicit collar keeps an opposite-edge route around each boundary
+    outside those junctions. Original coordinates and sharp tips stay fixed;
+    extra boundary points are exact edge midpoints, never fitted samples.
+    """
+    edges=_edge_faces(faces)
+    boundary={edge for edge,ids in edges.items() if len(ids)==1}
+    next_vertex={};previous={};incident=defaultdict(list)
+    for fi,face in enumerate(faces):
+        for a,b in zip(face,face[1:]+face[:1]):
+            incident[a].append(fi)
+            if tuple(sorted((a,b))) in boundary:next_vertex[a]=b;previous[b]=a
+    if set(next_vertex)!=set(previous):
+        raise ValueError('The outline boundary cannot form a continuous quad row.')
+    movement={}
+    for i in next_vertex:
+        p=vertices[i];a=geometry._sub(p,vertices[previous[i]]);b=geometry._sub(vertices[next_vertex[i]],p)
+        a=geometry._mul(a,1/math.hypot(*a));b=geometry._mul(b,1/math.hypot(*b))
+        denominator=max(1e-12,1+geometry._dot(a,b))
+        velocity=geometry._mul((-a[1]-b[1],a[0]+b[0]),1/denominator)
+        limit=width*.35
+        # Limit each move by the incident faces' halfplanes, not a global
+        # smallest width: a tiny cusp must not shrink every other quad row.
+        for fi in incident[i]:
+            face=faces[fi]
+            for j in range(len(face)):
+                ids=[face[j],face[(j+1)%len(face)],face[(j+2)%len(face)]]
+                if i not in ids:continue
+                p0,p1,p2=(vertices[k] for k in ids)
+                area=geometry._cross(geometry._sub(p1,p0),geometry._sub(p2,p1))
+                moved=[geometry._add(vertices[k],velocity) if k==i else vertices[k] for k in ids]
+                rate=geometry._cross(geometry._sub(moved[1],moved[0]),geometry._sub(moved[2],moved[1]))-area
+                # A boundary point on a straight quad side becomes a reflex
+                # corner when moved in. Split that core quad instead of
+                # forcing the entire collar down to a zero-width sliver.
+                if rate<0 and area>epsilon*epsilon*100:limit=min(limit,area/-rate*.22)
+        movement[i]=geometry._mul(velocity,limit)
+    core=list(vertices)
+    def core_patch(face):
+        if _convex(core,face,epsilon):return [face]
+        if len(face)==4:
+            a,b,c,d=face
+            for triangles in (([a,b,c],[a,c,d]),([a,b,d],[b,c,d])):
+                if all(_signed_area(core,t)>epsilon*epsilon for t in triangles):return list(triangles)
+        return None
+    # Simultaneous corner moves can constrain one another. Relax only the
+    # affected neighborhood, retaining generous rows on the regular arcs.
+    for _ in range(64):
+        for i,delta in movement.items():core[i]=geometry._add(vertices[i],delta)
+        bad=set()
+        for face in faces:
+            if core_patch(face) is None:bad.update(i for i in face if i in movement)
+        for a,b in next_vertex.items():
+            collar=[vertices[a],vertices[b],core[b],core[a]]
+            # At an inner corner the opposite endpoint's displacement sets
+            # the sign. Halving both endpoints preserves a bad width ratio.
+            if geometry._cross(geometry._sub(core[a],core[b]),geometry._sub(vertices[a],core[a]))<=epsilon*epsilon:bad.add(b)
+            if geometry._cross(geometry._sub(core[b],vertices[b]),geometry._sub(core[a],core[b]))<=epsilon*epsilon:bad.add(a)
+        if not bad:break
+        for i in bad:movement[i]=geometry._mul(movement[i],.5)
+    else:raise ValueError('The outline is too narrow to create a reliable quad row.')
+    faces=[patch for face in faces for patch in core_patch(face)]
+    edges=_edge_faces(faces)
+    output=list(vertices);core_ids={i:i for i in range(len(vertices))}
+    for i in next_vertex:core_ids[i]=len(output);output.append(core[i])
+    # Split triangle edges and carry a split through opposite quad edges.
+    # Regular arc quads need at most two faces, rather than blanket subdivision
+    # adding a face center and four faces to every otherwise clean quad.
+    marked={tuple(sorted((a,b))) for face in faces if len(face)==3 for a,b in zip(face,face[1:]+face[:1])}
+    pending=[fi for fi,face in enumerate(faces) if len(face)==4]
+    while pending:
+        fi=pending.pop();face=faces[fi]
+        fedges=[tuple(sorted((a,b))) for a,b in zip(face,face[1:]+face[:1])]
+        found=[j for j,edge in enumerate(fedges) if edge in marked]
+        added=[]
+        if len(found)==1:added=[fedges[(found[0]+2)%4]]
+        elif len(found)==3 or (len(found)==2 and (found[1]-found[0])%2):added=[e for e in fedges if e not in marked]
+        for edge in added:
+            marked.add(edge)
+            pending.extend(i for i in edges[edge] if i!=fi and len(faces[i])==4)
+    edge_ids={}
+    for a,b in sorted(marked):
+        edge_ids[a,b]=len(output);output.append(geometry._mul(geometry._add(core[a],core[b]),.5))
+    quads=[]
+    for face in faces:
+        fedges=[tuple(sorted((a,b))) for a,b in zip(face,face[1:]+face[:1])]
+        found=[j for j,edge in enumerate(fedges) if edge in marked]
+        if not found:
+            quads.append([core_ids[i] for i in face]);continue
+        if len(face)==4 and len(found)==2:
+            j=found[0];a,b,c,d=face[j:]+face[:j]
+            mid_a=edge_ids[tuple(sorted((a,b)))];mid_b=edge_ids[tuple(sorted((c,d)))]
+            quads.extend(([mid_a,core_ids[b],core_ids[c],mid_b],[mid_b,core_ids[d],core_ids[a],mid_a]));continue
+        center=len(output);output.append(tuple(math.fsum(core[i][axis] for i in face)/len(face) for axis in range(2)))
+        for j,i in enumerate(face):
+            quads.append([core_ids[i],edge_ids[tuple(sorted((i,face[(j+1)%len(face)])))],center,
+                          edge_ids[tuple(sorted((face[j-1],i)))]] )
+    new_boundary=set();collar_faces=[]
+    for a,b in next_vertex.items():
+        edge=tuple(sorted((a,b)))
+        if edge not in marked:
+            collar_faces.append(len(quads));quads.append([a,b,core_ids[b],core_ids[a]])
+            new_boundary.add(edge);continue
+        middle=len(output);output.append(geometry._mul(geometry._add(vertices[a],vertices[b]),.5))
+        inner=edge_ids[edge]
+        collar_faces.extend((len(quads),len(quads)+1))
+        quads.extend(([a,middle,inner,core_ids[a]],[middle,b,core_ids[b],inner]))
+        new_boundary.update((tuple(sorted((a,middle))),tuple(sorted((middle,b)))))
+    # Verify the route Blender follows, rather than equating 'all quads' with
+    # loop-cut support. Opposite edges in the collar must make closed rings.
+    adjacency=_edge_faces(quads);unvisited=set(collar_faces);rings=0
+    while unvisited:
+        first=min(unvisited);face=quads[first];edge=tuple(sorted((face[0],face[3])))
+        current=first;visited=set()
+        while current not in visited:
+            if current not in unvisited:raise ValueError('The outline quad row branches unexpectedly.')
+            visited.add(current);f=quads[current]
+            j=next(j for j in range(4) if tuple(sorted((f[j],f[(j+1)%4])))==edge)
+            edge=tuple(sorted((f[(j+2)%4],f[(j+3)%4])))
+            neighbors=adjacency[edge]
+            if len(neighbors)!=2:raise ValueError('The outline loop cut would stop at a junction.')
+            current=neighbors[0] if neighbors[1]==current else neighbors[1]
+        if current!=first:raise ValueError('The outline quad row did not close.')
+        unvisited.difference_update(visited);rings+=1
+    return output,quads,new_boundary,{'loop_cut_rings':rings,'loop_cut_faces':len(collar_faces)}
+
+
 def _adaptive_mesh(result):
     sources=result['source_loops'];offsets=result['offset_loops'];loops=sources+offsets
     original=[tuple(p) for loop in loops for p in loop]
@@ -336,10 +466,13 @@ def _adaptive_mesh(result):
     expected_area=math.fsum(geometry._area(loop) for loop in result['border_loops'])
     euler=sum(1 if geometry._area(loop)>0 else -1 for loop in result['border_loops'])
     _validate(vertices,faces,boundary,expected_area,epsilon,euler)
+    vertices,faces,boundary,loop_diagnostics=_quad_loop_layout(vertices,faces,result['thickness'],epsilon)
+    _validate(vertices,faces,boundary,expected_area,epsilon,euler)
     return {'vertices':[(x,y,0.) for x,y in vertices],'faces':faces,'diagnostics':{
         'quad_faces':sum(len(face)==4 for face in faces),'triangle_faces':sum(len(face)==3 for face in faces),
         'direct_quad_rings':0,'triangulated_rings':len(loops),'boundary_rings':len(loops),
-        'loose_vertices':0,'protected_miter_seams':len(seams),'collision_rails':len(seams),'adaptive_topology':True}}
+        'loose_vertices':0,'protected_miter_seams':len(seams),'collision_rails':len(seams),'adaptive_topology':True,
+        **loop_diagnostics}}
 
 
 def build_mesh(result):

@@ -1,5 +1,22 @@
 # Release verification
 
+## Version 1.13.2
+
+- Native BMesh edge-ring subdivision cuts completely around every boundary row
+  in tapered borders, split necks, disappeared interiors and closed holes. These
+  tests follow opposite quad edges and then perform Blender's native subdivision,
+  rather than inferring loop-cut support from face counts.
+- Checks require all-quads, positive faces after Blender's float32 conversion,
+  unchanged boundary segments/corners, no crossing edges, area preservation and
+  watertight extrusion after the cut. Existing Safe Inset, local normal flow,
+  strict mesh, bevel, preview, tool and interaction suites remain in validation.
+- The retained user mesh was separately rebuilt from its exact exported vertices
+  and faces, preserving its boundary rather than regenerating a different offset.
+  Its private geometry is excluded from the repository.
+- Closed boundary rows provide loop-cut routes past collapsed corners. Local
+  poles remain inside collision patches; arbitrary loops through those patches
+  are not guaranteed to continue.
+
 ## Version 1.13.1
 
 - New tapered-border regressions require a short interior edge normal to each
