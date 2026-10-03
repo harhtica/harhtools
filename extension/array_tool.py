@@ -138,6 +138,7 @@ class HARHTOOLS_PG_array(bpy.types.PropertyGroup):
     fit_ring:BoolProperty(name='Fit Ring',description='At a fixed center, fit whole copies using the shape\'s angular width. From Source instead fits Radius to Count. Source geometry and the chosen center stay unchanged',default=False,update=fit_changed)
     fit_side:EnumProperty(name='Fit',items=[('INSIDE','Inside','Fit the inner edges'),('CENTER','Centers','Fit through centers'),('OUTSIDE','Outside','Fit the outer edges')],default='INSIDE',update=changed)
     linked:BoolProperty(name='Linked Copies',description='Share mesh or curve data with the source; disabled gives independent geometry',default=False,update=changed)
+    join_generated:BoolProperty(name='Join Generated',description='Join the original and all copies into one mesh, keeping their visible modifiers, materials and UVs. Circular results use the rotation center as their origin',default=False,update=changed)
     resolved_radius:FloatProperty(name='Radius',description='Calculated distance from the chosen center to the source',default=0,subtype='DISTANCE',unit='LENGTH',precision=3,options={'SKIP_SAVE'})
     resolved_count:IntProperty(name='Copies',description='Whole copies that fit after the original piece',default=0,min=0,options={'SKIP_SAVE'})
     resolved_step:FloatProperty(name='Step',description='Angular width of the source; adjacent copies meet at this rotation',default=0,subtype='ANGLE',unit='ROTATION',precision=3,options={'SKIP_SAVE'})
@@ -388,13 +389,14 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
             self.refresh(context,geometry=self._geometry_dirty or selection_signature(context)!=self._signature)
             if self._error:raise ValueError(self._error)
             self._committing=True
-            copies=array_core.commit(context,self._snapshot,self._plan,linked=self._cfg.linked)
+            joined=self._cfg.join_generated
+            copies=array_core.commit(context,self._snapshot,self._plan,linked=self._cfg.linked and not joined,join_generated=joined)
         except Exception as exc:
             self._error=str(exc);self.report({'ERROR'},str(exc));return {'RUNNING_MODAL'}
         finally:self._committing=False
         count=len(copies)
         self.finish(context)
-        self.report({'INFO'},f'Created {count} array objects; originals kept')
+        self.report({'INFO'},'Joined the original and copies into one mesh' if joined else f'Created {count} array objects; originals kept')
         return {'FINISHED'}
 
     def modal(self,context,event):
@@ -726,7 +728,7 @@ def draw_pattern(layout,context):
         if cfg.fit_ring and cfg.pivot=='BOUNDS':
             row=column.row(align=False)
             for value,label in [('INSIDE','Inside'),('CENTER','Centers'),('OUTSIDE','Outside')]:row.prop_enum(cfg,'fit_side',value,text=label)
-    _toggle_label(column,cfg,'linked','Linked Copies')
+    _toggle_label(column,cfg,'linked','Linked Copies',enabled=not cfg.join_generated)
 
 
 def draw_visibility(layout,context):
@@ -742,11 +744,16 @@ def draw_visibility(layout,context):
 def draw_actions(layout,context):
     cfg=settings(context);state=preview_state()
     column=layout.column(align=False);column.scale_y=shortcuts.CONTROL_HEIGHT
+    _toggle_label(column,cfg,'join_generated','Join Generated')
+    if cfg.join_generated:
+        column.label(text='Original + copies in one mesh')
+        if cfg.mode=='CIRCULAR':column.label(text='Origin at rotation center')
     if state:
         if state._error:
             error=column.column(align=True);error.alert=not state._waiting
             for line in textwrap.wrap(state._error,30):error.label(text=line)
-        elif state._plan and not (cfg.mode=='LINEAR' and cfg.fit_length):column.label(text=f'{state._plan.new_object_count:,} new objects')
+        elif state._plan and not (cfg.mode=='LINEAR' and cfg.fit_length):
+            column.label(text=f'{state._plan.new_object_count:,} copies → 1 mesh' if cfg.join_generated else f'{state._plan.new_object_count:,} new objects')
         row=column.row(align=False)
         generate=row.row();generate.enabled=bool(state._plan and state._plan.new_object_count and not state._error)
         generate.operator('view3d.harhtools_array_action',text='Generate',icon='CHECKMARK').action='GENERATE'

@@ -1,6 +1,20 @@
-# harhtools 1.16.2
+# harhtools 1.17.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
+
+## Join generated arrays
+
+Enable **Array > Join Generated**, directly above Generate, to combine the
+original and all circular or linear copies into one mesh. The result keeps
+materials, UVs and evaluated modifier geometry; curves become mesh surfaces.
+Joining does not weld or merge overlapping vertices. **Linked Copies** is
+disabled while joining. With Join Generated off, the original and separate
+copies remain unchanged as before.
+
+Circular results use the rotation center as their origin, including **3D Cursor**
+and **Last Origin** centers. Linear results use the active source origin.
+**Fit Length** joins the repeated source and copies while keeping the bookend
+reference separate. Undo restores the original objects.
 
 ## Textured array previews
 
@@ -33,7 +47,7 @@ Use **Inside Frame** for the existing closed-outline containment tool.
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.16.2.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.17.0.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart

@@ -458,11 +458,108 @@ def _restore_selection(context, selected, active):
         pass
 
 
-def commit(context, snap, plan, linked=False):
+def _join_generated(context, snap, plan, copies):
+    """Stage evaluated surfaces before replacing the source and its copies.
+
+    Joining evaluated meshes retains modifiers, UVs and object material overrides
+    for every piece, including mixed mesh/curve selections. An empty active mesh
+    anchors the result at the circular pivot (or the linear source origin).
+    """
+    if any(source.library or source.override_library for source in snap.sources):
+        raise ValueError('Make the sources local before using Join Generated.')
+    collection = context.collection or context.scene.collection
+    staged, meshes = [], []
+    keep = None
+    try:
+        mesh = bpy.data.meshes.new('Array Result')
+        meshes.append(mesh)
+        result = bpy.data.objects.new(snap.active_source.name + ' Array', mesh)
+        staged.append(result)
+        collection.objects.link(result)
+        origin = plan.pivot if plan.axis is not None else snap.active_matrix.translation
+        result.matrix_world = Matrix.Translation(origin)
+        depsgraph = context.evaluated_depsgraph_get()
+        expected_vertices = 0
+        uv_active = uv_render = None
+        render_layers = []
+        for source in (*snap.sources, *copies):
+            evaluated = source.evaluated_get(depsgraph)
+            mesh = bpy.data.meshes.new_from_object(evaluated, preserve_all_data_layers=True,
+                                                 depsgraph=depsgraph)
+            if mesh is None:
+                raise ValueError(f'{source.name}: could not create the joined surface.')
+            meshes.append(mesh)
+            expected_vertices += len(mesh.vertices)
+            if mesh.uv_layers and (uv_active is None or source == snap.active_source):
+                uv_active = mesh.uv_layers.active.name
+                uv_render = next((uv.name for uv in mesh.uv_layers if uv.active_render), uv_active)
+            render_layers.append((mesh, next((uv for uv in mesh.uv_layers if uv.active_render),
+                                              mesh.uv_layers.active)))
+            # new_from_object can expose evaluated material IDs. Use originals
+            # and bake object-linked slots into the resulting mesh slots.
+            material_indices = [face.material_index for face in mesh.polygons]
+            mesh.materials.clear()
+            for slot in evaluated.material_slots:
+                mesh.materials.append(slot.material.original if slot.material else None)
+            for face, index in zip(mesh.polygons, material_indices):
+                face.material_index = index
+            part = bpy.data.objects.new('Array Join Part', mesh)
+            staged.append(part)
+            collection.objects.link(part)
+            part.matrix_world = evaluated.matrix_world.copy()
+        # Implicit texture coordinates use one render UV map after a join. If
+        # sources name that map differently, preserve both their named maps and
+        # a shared render map so their textures continue to use the right UVs.
+        if len({uv.name for _, uv in render_layers if uv is not None}) > 1:
+            used_names = {uv.name for mesh, _ in render_layers for uv in mesh.uv_layers}
+            shared = 'Array UV'
+            while shared in used_names:
+                shared += '_'
+            for mesh, uv in render_layers:
+                coordinates = [tuple(d.uv) for d in uv.data] if uv is not None else None
+                layer = mesh.uv_layers.new(name=shared)
+                if layer is None:
+                    raise ValueError('Join Generated needs a free UV map slot to preserve these textures.')
+                if coordinates:
+                    for point, coordinate in zip(layer.data, coordinates):
+                        point.uv = coordinate
+            uv_active = uv_render = shared
+        context.view_layer.update()
+        _restore_selection(context, staged, result)
+        with context.temp_override(object=result, active_object=result,
+                                   selected_objects=staged, selected_editable_objects=staged):
+            status = bpy.ops.object.join()
+        if status != {'FINISHED'} or len(result.data.vertices) != expected_vertices:
+            raise ValueError('Could not join every array piece; the original objects were kept.')
+        if uv_active and uv_active in result.data.uv_layers:
+            result.data.uv_layers.active = result.data.uv_layers[uv_active]
+        if uv_render and uv_render in result.data.uv_layers:
+            result.data.uv_layers[uv_render].active_render = True
+        # All fallible geometry construction is complete before consuming sources.
+        for obj in (*copies, *snap.sources):
+            bpy.data.objects.remove(obj, do_unlink=True)
+        keep = result
+        return [result]
+    finally:
+        for obj in reversed(staged):
+            try:
+                if obj != keep:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+            except ReferenceError:
+                pass  # Blender's Join already removed the staging parts.
+        for mesh in meshes:
+            try:
+                if mesh.users == 0:
+                    bpy.data.meshes.remove(mesh)
+            except ReferenceError:
+                pass
+
+
+def commit(context, snap, plan, linked=False, join_generated=False):
     """Create a complete array or roll back every newly created datablock.
 
     The caller's modal operator owns the single Blender undo boundary. Sources
-    are never moved, edited, joined, hidden or removed.
+    stay unchanged unless Join Generated replaces them with one evaluated mesh.
     """
     _validate_sources(snap)
     if plan.source_snapshot is not None:
@@ -529,6 +626,15 @@ def commit(context, snap, plan, linked=False):
                    for row_a, row_e in zip(actual, expected) for a, e in zip(row_a, row_e)):
                 raise ValueError(f'{obj.name}: constraints, drivers or parenting override the array position. '
                                  'Resolve those transforms before generating; no copies were kept.')
+        if join_generated:
+            made = _join_generated(context, snap, plan, made)
+            for data in made_data:
+                if data.users == 0:
+                    if isinstance(data, bpy.types.Mesh):
+                        bpy.data.meshes.remove(data)
+                    elif isinstance(data, bpy.types.Curve):
+                        bpy.data.curves.remove(data)
+            made_data.clear()
         _restore_selection(context, made, made[-1])
         return made
     except Exception:
