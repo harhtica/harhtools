@@ -4,7 +4,14 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.19.0
+## Version 1.19.1
+
+- Circular **Sweep** now accepts negative angles down to **-360 degrees** to
+  reverse the array. Positive and negative sweeps keep the same fit radius,
+  spacing and count, including Fit Ring from Source, Last Origin or 3D Cursor.
+  Full circles in either direction avoid a duplicate at the seam.
+
+## Included from 1.19.0
 
 - **Array > Deform > Deform Copies** gradually scales each complete copied group.
   **Last Copy Size** is a percentage of the unchanged original: 25% with four

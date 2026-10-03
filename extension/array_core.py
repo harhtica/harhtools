@@ -215,12 +215,13 @@ def angular_fit(points, pivot, axis, sweep):
     angular_tolerance = 1e-4
     if span <= angular_tolerance:
         raise ValueError('The source has no usable angular width around this axis.')
-    slots = max(0, math.floor((sweep + angular_tolerance) / span))
+    magnitude = abs(sweep)
+    slots = max(0, math.floor((magnitude + angular_tolerance) / span))
     copies = max(0, slots - 1)
-    remainder = max(0.0, sweep - slots * span)
+    remainder = max(0.0, magnitude - slots * span)
     if remainder < angular_tolerance:
         remainder = 0.0
-    return dict(count=copies, total=slots, step=span, remainder=remainder,
+    return dict(count=copies, total=slots, step=math.copysign(span, sweep), remainder=remainder,
                 closes=remainder == 0.0 and slots > 0)
 
 
@@ -261,11 +262,12 @@ def _base_plan(snap, cfg, scene):
     if axis_name not in _AXES:
         raise ValueError('Choose X, Y or Z for the circular axis.')
     sweep = _finite(cfg.sweep, 'Sweep')
-    if sweep <= 0 or sweep > math.tau + 1e-6:
-        raise ValueError('Sweep must be greater than 0 and no more than 360 degrees.')
-    full = math.isclose(sweep, math.tau, rel_tol=0, abs_tol=1e-6)
+    magnitude = abs(sweep)
+    if magnitude == 0 or magnitude > math.tau + 1e-6:
+        raise ValueError('Sweep must be between -360 and 360 degrees, excluding zero.')
+    full = math.isclose(magnitude, math.tau, rel_tol=0, abs_tol=1e-6)
     # The unchanged original is slot zero. Count is the number of NEW copies.
-    step = 0.0 if angular_fitting else ((math.tau / (count + 1)) if full else (sweep / count))
+    step = 0.0 if angular_fitting else (math.copysign(math.tau / (count + 1), sweep) if full else (sweep / count))
     pivot_mode = getattr(cfg, 'pivot', 'BOUNDS')
     axis = frame.to_3x3() @ _AXES[axis_name]
     axis.normalize()
@@ -294,7 +296,7 @@ def _base_plan(snap, cfg, scene):
         # A partial arc also has a gap between its last and first slots.
         # On a nearly closed arc that gap can be smaller than the regular
         # step, and it is those end copies that determine the fitted radius.
-        fit_step = step if full else min(step, math.tau - sweep)
+        fit_step = abs(step) if full else min(abs(step), math.tau - magnitude)
         tangent = math.tan(min(fit_step, math.pi) * .5)
         if tangent <= 1e-8:
             raise ValueError('The sweep is too small to fit a ring.')

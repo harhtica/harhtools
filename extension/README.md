@@ -1,6 +1,11 @@
-# harhtools 1.19.0
+# harhtools 1.19.1
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
+
+Circular **Sweep** accepts angles from **-360 to 360 degrees** (except zero).
+Negative angles reverse the direction, including with Fit Ring enabled. The
+same angle magnitude keeps the same fit radius, spacing and count. Both full
+circle directions avoid a duplicate copy at the seam.
 
 ## Gradual array changes
 
