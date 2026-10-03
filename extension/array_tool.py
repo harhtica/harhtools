@@ -5,7 +5,7 @@ import bpy
 from bpy.app.handlers import persistent
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty
 from mathutils import Matrix
-from . import array_core, array_inference, array_tween, icons, shortcuts, display_units
+from . import array_core, array_inference, array_tween, array_material_preview, icons, shortcuts, display_units
 
 STATE_KEY='harhtools_array_preview'
 _tab_active=False
@@ -24,6 +24,8 @@ def _discard_stale_state(state):
     if inactive is not None:
         try:inactive.restore()
         except (AttributeError,ReferenceError,RuntimeError):pass
+    native=record.get('_native')
+    if native is not None:native.clear()
     for name in ('_handler','_hud_handler'):
         handle=record.get(name)
         if handle is not None:
@@ -117,6 +119,7 @@ def native_scene_modal(window):
 
 
 class HARHTOOLS_PG_array(bpy.types.PropertyGroup):
+    show_materials:BoolProperty(name='Show Materials',description='Preview actual materials and transparent cutouts in Material Preview or Rendered view',default=True,update=length_changed)
     gap_studs:display_units.distance_property('gap','Gap',minimum=-1e10)
     radius_studs:display_units.distance_property('radius','Radius')
     resolved_radius_studs:display_units.distance_property('resolved_radius','Radius')
@@ -216,6 +219,7 @@ class InactiveGuides:
         from types import SimpleNamespace
         objects=[obj for obj in self.view_layer.objects
                  if obj.type in {'MESH','CURVE'} and obj.as_pointer() not in selected
+                 and not array_material_preview.is_preview(obj)
                  and obj.visible_get(view_layer=self.view_layer,viewport=self.space)]
         # Build before hiding so evaluation sees exactly the original geometry.
         # Failure leaves every object visible rather than losing scene geometry.
@@ -279,6 +283,9 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
         self._tween_revision=None;self._tween_sources=None;self._tween_mode=None
         self._geometry_dirty=False;self._source_ids=set();self._committing=False
         self._inactive=InactiveGuides(context.view_layer,self._area.spaces.active)
+        array_material_preview.purge()
+        self._native=array_material_preview.MaterialPreview(context.scene,self._area.spaces.active)
+        self._native_dirty=True;self._saving=False
         self._inactive_dirty=True
         self._sidebar_suspended=not sidebar_is_active(self._area)
         initialize_for_selection(context)
@@ -309,6 +316,7 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
                 self._signature=selection_signature(context);self._source_ids=set()
                 self._geometry_dirty=False;self._dirty=False;self._waiting=True
                 self._error=str(exc);self._axis_reason='';self._tween.clear()
+                self._native.clear();self._native_dirty=True
                 self._workspace.status_text_set(None if self._sidebar_suspended else 'Array | Select mesh or curve objects to begin | Esc: cancel')
                 self._area.tag_redraw()
                 return
@@ -337,6 +345,7 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
         if geometry and self._plan:
             self._shader,self._cache=preview_geometry(context,self._plan.source_snapshot or self._snapshot)
             self._geometry_dirty=False
+            self._native.clear();self._native_dirty=True
         if self._plan and self._plan.fit_info:
             self._fit_batch=fit_marker(self._shader,self._plan)
         if self._plan:
@@ -356,7 +365,8 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
             # changes tween; reusing an old pose with a new frame would jump.
             if source_edit:self._tween.settle()
             self._tween_sources=identities;self._tween_mode=self._cfg.mode;self._tween_revision=revision
-        else:self._tween.clear()
+        else:
+            self._tween.clear();self._native.clear()
         self._workspace.status_text_set(None if self._sidebar_suspended else 'Array | Click to select | Shift + wheel: axis | Enter / Ctrl+A: apply | Esc: cancel')
         self._area.tag_redraw()
 
@@ -369,6 +379,7 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
     def generate(self,context):
         try:
             self._inactive.restore()
+            self._native.clear();self._native_dirty=True
             self.refresh(context,geometry=self._geometry_dirty or selection_signature(context)!=self._signature)
             if self._error:raise ValueError(self._error)
             self._committing=True
@@ -392,6 +403,7 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
             if not self._sidebar_suspended:
                 self._sidebar_suspended=True
                 self._inactive.restore();self._inactive_dirty=True
+                self._native.clear();self._native_dirty=True
                 self._workspace.status_text_set(None);self._area.tag_redraw()
             return {'PASS_THROUGH'}
         if self._sidebar_suspended:
@@ -413,8 +425,9 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
                     self._inactive.update(context,self._cfg)
                     self._inactive_dirty=False
                     self._area.tag_redraw()
-            except (ValueError,ReferenceError) as exc:
-                self._error=str(exc);self._plan=None;self._tween.clear();self._area.tag_redraw()
+                self.update_material_preview(context)
+            except (ValueError,ReferenceError,RuntimeError) as exc:
+                self._error=str(exc);self._plan=None;self._tween.clear();self._native.clear();self._area.tag_redraw()
             if self._tween.active():self._area.tag_redraw()
             return {'PASS_THROUGH'}
         # Sidebar controls do not start a scene-selection drag. Keep the fade
@@ -436,6 +449,7 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
         # temporary hide flags out of native operators' undo snapshots.
         if event.type not in {'MOUSEMOVE','INBETWEEN_MOUSEMOVE'}:
             self._inactive.restore(clear_cache=False);self._inactive_dirty=True
+            self._native.clear_objects()
         # Allow fields, popup menus and other sidebar controls to finish their input.
         if self.over_controls(event):return {'PASS_THROUGH'}
         keyconfig=context.window_manager.keyconfigs.active
@@ -447,6 +461,17 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
         # Let Blender handle selection, box select, and transforms normally.
         # The next timer tick rebuilds the preview from the new selection.
         return {'PASS_THROUGH'}
+
+    def update_material_preview(self,context):
+        enabled=(self._cfg.show_materials and self._area.spaces.active.shading.type in {'MATERIAL','RENDERED'}
+                 and self._plan and not self._saving and not self._sidebar_suspended)
+        if not enabled:
+            self._native.clear();self._native_dirty=True
+            return
+        if self._native_dirty:
+            self._native.rebuild(context,self._plan.source_snapshot or self._snapshot)
+            self._native_dirty=False
+        self._native.sync(self._tween.sample(),self._tween_origin,self._tween_inverse)
 
     def draw_overlay(self):
         if self._done or bpy.context.area!=self._area or not sidebar_is_active(self._area):return
@@ -462,7 +487,9 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
             self._shader.bind()
             tween=getattr(self,'_tween',None)
             frames=tween.sample() if tween else [(matrix,1.0) for matrix in self._plan.transforms]
-            for transform,alpha in frames:
+            # Native surfaces already show the material, including alpha holes.
+            # Drawing the old pink triangles over them would fill those holes.
+            for transform,alpha in ([] if self._native.ready else frames):
                 if alpha<=.001:continue
                 if tween:transform=self._tween_origin @ transform @ self._tween_inverse
                 for source_matrix,wire,fill in self._cache:
@@ -497,6 +524,7 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
         if self._done:return
         self._done=True
         if getattr(self,'_inactive',None):self._inactive.restore()
+        if getattr(self,'_native',None):self._native.clear()
         for attr in ('_handler','_hud_handler'):
             handle=getattr(self,attr,None)
             if handle:bpy.types.SpaceView3D.draw_handler_remove(handle,'WINDOW');setattr(self,attr,None)
@@ -701,6 +729,7 @@ def draw_visibility(layout,context):
     cfg=settings(context)
     column=layout.column(align=False);column.scale_y=shortcuts.CONTROL_HEIGHT
     column.enabled=bool(context.selected_objects)
+    _toggle_label(column,cfg,'show_materials','Show Materials')
     _toggle_label(column,cfg,'hide_inactive','Hide Inactive',icon='HIDE_ON' if cfg.hide_inactive else 'HIDE_OFF')
     opacity=column.row();opacity.enabled=cfg.hide_inactive
     opacity.prop(cfg,'inactive_opacity',text='Opacity',slider=True)
@@ -778,6 +807,7 @@ def _resume_history():
 @persistent
 def history_post(*_args):
     global _resume_timer
+    array_material_preview.purge()
     if _history_target and _tab_active and not bpy.app.timers.is_registered(_resume_history):
         _resume_timer=_resume_history
         bpy.app.timers.register(_resume_history,first_interval=.08)
@@ -786,13 +816,16 @@ def history_post(*_args):
 @persistent
 def save_pre(*_args):
     state=preview_state()
-    if state:state._inactive.restore()
+    if state:
+        state._inactive.restore()
+        state._saving=True;state._native.clear();state._native_dirty=True
+    array_material_preview.purge()
 
 
 @persistent
 def save_post(*_args):
     state=preview_state()
-    if state:state._inactive_dirty=True
+    if state:state._inactive_dirty=True;state._saving=False
 
 
 @persistent

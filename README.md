@@ -4,7 +4,16 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.16.0
+## Version 1.16.1
+
+- Array previews now show the actual source materials, UV textures and alpha
+  cutouts in Material Preview and Rendered view. **Visibility > Show Materials**
+  is enabled by default; switch it off for the previous wire preview.
+- Preview surfaces share evaluated geometry and reuse their objects while the
+  array moves. They cannot be selected, stay out of final renders and saves,
+  and are removed on Cancel, Generate, Undo and tool changes.
+
+## Included from 1.16.0
 
 - **Fit / Align > Bake / Match Size > Fit Bake to Active** fits a baked plane
   to the original mesh, including meshes with depth, open edges and modifiers.
@@ -189,7 +198,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.15.1](https://harhtica.github.io/harhtools/harhtools-1.16.0.zip), or use
+[Download 1.15.1](https://harhtica.github.io/harhtools/harhtools-1.16.1.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

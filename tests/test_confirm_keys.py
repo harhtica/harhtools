@@ -30,6 +30,7 @@ with patch.object(sb.shortcuts,'settings',return_value=cfg),patch.object(sb,'com
 
 h=NS(_done=False,_area=NS(type='VIEW_3D',regions=[]),_region=NS(width=800),_request=None,
      _sidebar_suspended=False,_inactive=NS(restore=lambda **kw:None),over_controls=lambda e:False,
+     _native=NS(clear_objects=lambda:None),
      generate=lambda c:{'FINISHED'})
 with patch.object(at,'sidebar_is_active',return_value=True):
     assert at.VIEW3D_OT_harhtools_array.modal(h,context,event())=={'FINISHED'}

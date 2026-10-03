@@ -1,6 +1,16 @@
-# harhtools 1.16.0
+# harhtools 1.16.1
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
+
+## Textured array previews
+
+In Material Preview or Rendered viewport shading, **Array > Visibility > Show
+Materials** displays the source materials, textures and transparent cutouts while
+adjusting the array. It is on by default. Switch it off to use the pink wire
+preview. Solid and Wireframe viewport shading retain the wire preview.
+The temporary preview objects are not selectable or included in final renders.
+They are cleared before saving, history changes, Generate, Cancel, or leaving
+Array. Only Generate creates the finished copies.
 
 ## Fit a baked plane to its original mesh
 
@@ -23,7 +33,7 @@ Use **Inside Frame** for the existing closed-outline containment tool.
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.16.0.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.16.1.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
