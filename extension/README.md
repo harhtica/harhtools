@@ -1,11 +1,29 @@
-# harhtools 1.15.1
+# harhtools 1.16.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
+
+## Fit a baked plane to its original mesh
+
+In Object Mode, select the bake plane, then select the original mesh last.
+Open **Fit / Align**, choose **Bake / Match Size**, and click **Fit Bake to Active**.
+It matches width and height independently by default. Enable **Proportional Scale**
+to preserve aspect ratio instead. The original mesh can have depth, modifiers,
+open edges, or disconnected parts; it does not need a closed boundary.
+
+**Use Visible Alpha** measures the visible image inside the plane's UV crop,
+ignoring transparent padding and other islands in a texture atlas. It supports
+rectangular, affine UV mappings with a direct image Alpha connection to Principled
+BSDF; unsupported mappings use the mesh bounds and report that fallback.
+**Align Rotation** compares the alpha silhouette with the original geometry to
+find its orientation, using object axes when a silhouette match is unavailable.
+**Depth** and **Surface Offset** control placement in front of or within the original.
+UVs, materials and mesh topology are preserved. The operation supports Undo.
+Use **Inside Frame** for the existing closed-outline containment tool.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.15.1.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.16.0.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart

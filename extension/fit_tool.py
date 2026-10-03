@@ -259,11 +259,28 @@ def fit_selection(context, proportional=True, boundary='OPENING', fill=100., equ
     depsgraph = context.evaluated_depsgraph_get()
     points = [p for obj in sources for p in object_points(obj, depsgraph)]
     transform, factors, envelope = solve(points, target, proportional, fill, equal_spacing, gap)
+    def verify():
+        actual = [target['project'](p) for obj in sources for p in
+                  object_points(obj, context.evaluated_depsgraph_get())]
+        envelope = hull(actual)
+        index = og._SegmentIndex([target['loop']])
+        clearance = max(0., gap/target['scale']-1e-6)
+        if (not contained(envelope, target['loop'], target['convex'], epsilon=1e-6)
+                or (clearance and any(index.within(a, b, clearance)
+                    for a, b in zip(envelope, envelope[1:]+envelope[:1])))):
+            raise ValueError('A modifier or constraint changed the fitted boundary; no changes were kept.')
+    apply_transform(context, sources, active, transform, proportional, verify)
+    return dict(count=len(sources), factors=factors, opening=target['opening'])
+
+
+def apply_transform(context, sources, active, transform, proportional, verify=None):
+    """Apply one arrangement transform atomically; preserve target and children."""
     # Protect the active object and unselected descendants when a parent moves.
     protected = {child for obj in sources for child in obj.children_recursive if child not in sources}
     changed = set(sources) | protected | {active}
     original_world = {obj: obj.matrix_world.copy() for obj in changed}
     original_basis = {obj: obj.matrix_basis.copy() for obj in changed}
+    original_parent_inverse = {obj: obj.matrix_parent_inverse.copy() for obj in changed}
     replacements = {}
     desired = {obj: transform @ original_world[obj] if obj in sources else original_world[obj]
                for obj in changed}
@@ -278,6 +295,15 @@ def fit_selection(context, proportional=True, boundary='OPENING', fill=100., equ
             if not close(obj.matrix_world, desired[obj]):
                 obj.matrix_world = desired[obj]
                 context.view_layer.update()
+                if (obj not in sources and obj.parent and obj.parent_type == 'OBJECT'
+                        and not close(obj.matrix_world, desired[obj])
+                        and abs(obj.parent.matrix_world.determinant()) > 1e-18
+                        and abs(obj.matrix_basis.determinant()) > 1e-18):
+                    # Parent inverse can encode the shear that location /
+                    # rotation / scale channels cannot. Keep children fixed.
+                    obj.matrix_parent_inverse = (obj.parent.matrix_world.inverted()
+                        @ desired[obj] @ obj.matrix_basis.inverted())
+                    context.view_layer.update()
         for obj in sources:
             if close(obj.matrix_world, desired[obj]): continue
             # Blender object channels cannot encode shear from nonuniform
@@ -296,26 +322,35 @@ def fit_selection(context, proportional=True, boundary='OPENING', fill=100., equ
         context.view_layer.update()
         if any(not close(obj.matrix_world, desired[obj]) for obj in ordered if obj not in replacements):
             raise ValueError('A parent, constraint or rotated scale prevented fitting. Use Proportional Scale or apply rotation first; no changes were kept.')
-        actual = [target['project'](p) for obj in sources for p in
-                  object_points(obj, context.evaluated_depsgraph_get())]
-        envelope = hull(actual)
-        index = og._SegmentIndex([target['loop']])
-        clearance = max(0., gap/target['scale']-1e-6)
-        if (not contained(envelope, target['loop'], target['convex'], epsilon=1e-6)
-                or (clearance and any(index.within(a, b, clearance)
-                    for a, b in zip(envelope, envelope[1:]+envelope[:1])))):
-            raise ValueError('A modifier or constraint changed the fitted boundary; no changes were kept.')
+        if verify is not None: verify()
     except Exception:
         for obj, (original, copy) in replacements.items():
             obj.data = original
             (bpy.data.meshes if obj.type == 'MESH' else bpy.data.curves).remove(copy)
-        for obj in ordered: obj.matrix_basis = original_basis[obj]
+        for obj in ordered:
+            obj.matrix_parent_inverse = original_parent_inverse[obj]
+            obj.matrix_basis = original_basis[obj]
         context.view_layer.update()
         raise
-    return dict(count=len(sources), factors=factors, opening=target['opening'])
 
 
 class HarhtoolsFitSettings(bpy.types.PropertyGroup):
+    mode: EnumProperty(name='Fit Mode', default='BOUNDS', items=[
+        ('BOUNDS', 'Bake / Match Size', 'Match width, height and alignment to any original mesh; no closed boundary required'),
+        ('FRAME', 'Inside Frame', 'Fit an arrangement within a closed planar frame')])
+    bake_proportional: BoolProperty(name='Proportional Scale', default=False,
+        description='Keep aspect ratio; turn off to match both target width and height exactly')
+    use_alpha: BoolProperty(name='Use Visible Alpha', default=True,
+        description='Match the visible texture bounds inside this plane UV crop; ignore transparent padding')
+    align_rotation: BoolProperty(name='Align Rotation', default=True,
+        description='Align to the original plane; match its visible silhouette when a direct alpha texture is available, otherwise use object axes')
+    depth: EnumProperty(name='Depth', default='FRONT', items=[
+        ('FRONT', 'Facing Surface', 'Place on the nearest front or back extent of the original'),
+        ('CENTER', 'Center', 'Center on the original depth'),
+        ('KEEP', 'Keep Current', 'Keep the current distance along the original plane normal')])
+    offset: FloatProperty(name='Surface Offset', default=0., subtype='DISTANCE', unit='LENGTH',
+        description='Move away from the original surface by this distance')
+    offset_studs: display_units.distance_property('offset', 'Surface Offset')
     proportional: BoolProperty(name='Proportional Scale', default=True,
         description='Keep the proportions of all selected shapes and their arrangement')
     boundary: EnumProperty(name='Fit Inside', default='OPENING', items=[
@@ -333,7 +368,7 @@ class HarhtoolsFitSettings(bpy.types.PropertyGroup):
 class OBJECT_OT_harhtools_fit_selected(bpy.types.Operator):
     bl_idname = 'object.harhtools_fit_selected'
     bl_label = 'Fit Selected into Active'
-    bl_description = 'Fit the outside of the selected arrangement inside the last-selected closed outline; keep that target fixed'
+    bl_description = 'Match the selected bake to the last-selected original, or fit shapes inside a closed frame; keep the target fixed'
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -343,30 +378,44 @@ class OBJECT_OT_harhtools_fit_selected(bpy.types.Operator):
 
     def execute(self, context):
         cfg = context.window_manager.harhtools_fit
-        try: result = fit_selection(context, cfg.proportional, cfg.boundary, cfg.fill, cfg.equal_spacing, cfg.gap)
+        try:
+            if cfg.mode == 'BOUNDS':
+                from . import bake_fit
+                result = bake_fit.fit_selection(context, cfg.bake_proportional, cfg.use_alpha,
+                    cfg.align_rotation, cfg.depth, cfg.offset)
+            else:
+                result = fit_selection(context, cfg.proportional, cfg.boundary, cfg.fill, cfg.equal_spacing, cfg.gap)
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
         sx, sy = result['factors']
-        scale = f'{sx:.3g}x' if cfg.proportional else f'{sx:.3g}x / {sy:.3g}x'
-        self.report({'INFO'}, f'Fitted {result["count"]} object(s) together into {context.active_object.name} | Scale {scale}')
+        scale = f'{sx:.3g}x / {sy:.3g}x'
+        note = ' | '+ '; '.join(result['notes']) if result.get('notes') else ''
+        self.report({'INFO'}, f'Fitted {result["count"]} object(s) to {context.active_object.name} | Scale {scale}{note}')
         return {'FINISHED'}
 
 
 def draw_panel(layout, context):
     cfg = context.window_manager.harhtools_fit
     box = layout.box()
-    box.label(text='Fit Selected into Active')
-    box.label(text='Select shapes, then the frame last.')
+    box.prop(cfg, 'mode')
+    box.label(text='Select bake, then original last.' if cfg.mode == 'BOUNDS' else 'Select shapes, then the frame last.')
     if context.active_object: box.label(text='Target: '+context.active_object.name)
-    box.prop(cfg, 'proportional')
-    box.prop(cfg, 'equal_spacing')
-    display_units.draw(box, cfg, 'gap', context)
-    box.prop(cfg, 'boundary')
-    box.prop(cfg, 'fill')
+    if cfg.mode == 'BOUNDS':
+        box.prop(cfg, 'bake_proportional')
+        box.prop(cfg, 'use_alpha')
+        box.prop(cfg, 'align_rotation')
+        box.prop(cfg, 'depth')
+        display_units.draw(box, cfg, 'offset', context)
+    else:
+        box.prop(cfg, 'proportional')
+        box.prop(cfg, 'equal_spacing')
+        display_units.draw(box, cfg, 'gap', context)
+        box.prop(cfg, 'boundary')
+        box.prop(cfg, 'fill')
     row = box.row(); row.scale_y = 1.3
-    row.operator('object.harhtools_fit_selected', icon='FULLSCREEN_ENTER')
-    box.label(text='Fits the outer geometry as one arrangement.')
+    row.operator('object.harhtools_fit_selected', text='Fit Bake to Active' if cfg.mode == 'BOUNDS' else 'Fit Selected into Active', icon='FULLSCREEN_ENTER')
+    box.label(text='Matches size; keeps UVs and target unchanged.' if cfg.mode == 'BOUNDS' else 'Fits the outer geometry as one arrangement.')
     if context.mode != 'OBJECT': box.label(text='Switch to Object Mode to fit.', icon='INFO')
 
 

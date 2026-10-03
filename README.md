@@ -4,7 +4,21 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.15.1
+## Version 1.16.0
+
+- **Fit / Align > Bake / Match Size > Fit Bake to Active** fits a baked plane
+  to the original mesh, including meshes with depth, open edges and modifiers.
+  Select the bake first and the original last. No closed boundary is required.
+- Width and height match independently by default; **Proportional Scale** keeps
+  the aspect ratio. **Use Visible Alpha** ignores transparent padding within the
+  plane's own UV crop, including cropped texture atlases.
+- **Align Rotation** matches the original plane and compares the alpha silhouette
+  to handle rotated geometry. Without a usable alpha silhouette it uses object
+  axes. **Facing Surface**, **Center**, **Keep Current**, and **Surface Offset**
+  control depth. The original, UVs and mesh topology stay unchanged; Undo works.
+- The existing closed-boundary fitting tool remains under **Inside Frame**.
+
+## Included from 1.15.1
 
 - Fixes Connect Textures cancelling with `'Event' object has no attribute 'timer'`
   when its animation starts. The animation now uses Blender's supported event
@@ -175,7 +189,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.15.1](https://harhtica.github.io/harhtools/harhtools-1.15.1.zip), or use
+[Download 1.15.1](https://harhtica.github.io/harhtools/harhtools-1.16.0.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

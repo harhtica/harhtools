@@ -205,6 +205,7 @@ try:
     print('PASS atomic rollback after blocked transforms')
 
     cfg = bpy.context.window_manager.harhtools_fit
+    cfg.mode = 'FRAME'
     cfg.gap_studs = 1.5
     assert abs(cfg.gap-.42) < 1e-6
     cfg.gap = .1

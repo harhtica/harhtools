@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 TESTS = (
+    'test_bake_fit.py',
     'test_texture_connect.py',
     'test_confirm_keys.py',
     'test_fit_tool.py',
