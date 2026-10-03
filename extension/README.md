@@ -1,4 +1,4 @@
-# harhtools 1.18.0
+# harhtools 1.18.1
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
@@ -22,6 +22,16 @@ selection bounds. **Auto** spaces along the axis with the largest spread and
 aligns across the two other axes to straighten the row. Choose **X**, **Y** or
 **Z** for a specific axis, and **Global** or **Active** for its orientation.
 Both buttons support Undo and the Adjust Last Operation panel.
+
+Enable **Align to Active** to align to the last-selected object and keep that
+reference object fixed, including all its disconnected pieces. Center, Min Edge
+and Max Edge then use that object's bounds. In Edit Mode, select a vertex, edge
+or face on the reference piece last; its whole island stays fixed while the other
+selected pieces align. If there is no clear active piece, select one before aligning.
+With one moving piece, Auto aligns all axes to the reference. With several moving
+pieces, Auto preserves their row direction and aligns across it. Switching the
+toggle off restores alignment to the combined selection bounds. This toggle
+affects **Align Pieces**, not the separate **Distribute Even Gaps** action.
 
 Whole objects use evaluated geometry bounds; disconnected islands use mesh
 vertices before modifiers. Texture transparency does not change mesh bounds.
@@ -72,7 +82,7 @@ Use **Inside Frame** for the existing closed-outline containment tool.
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.18.0.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.18.1.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart

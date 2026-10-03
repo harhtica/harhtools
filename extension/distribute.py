@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import bpy
 import bmesh
-from bpy.props import EnumProperty, PointerProperty
+from bpy.props import BoolProperty, EnumProperty, PointerProperty
 from mathutils import Vector
 
 from . import display_units
@@ -15,9 +15,11 @@ SPACES = [('WORLD', 'Global', 'Use world axes'),
           ('ACTIVE', 'Active', 'Use the active object axes')]
 PARTS = [('ISLANDS', 'Disconnected Pieces', 'Treat each disconnected mesh island as a separate piece'),
          ('OBJECTS', 'Whole Objects', 'Keep all geometry inside each object together')]
-ALIGNMENTS = [('CENTER', 'Center', 'Align piece centers to the selection bounds center'),
+ALIGNMENTS = [('CENTER', 'Center', 'Align piece centers to the reference or selection bounds center'),
               ('MIN', 'Min Edge', 'Align the lowest edges'),
               ('MAX', 'Max Edge', 'Align the highest edges')]
+ACTIVE_HELP = ('Use the last-selected object as the fixed reference. In Edit Mode, use the '
+               'piece containing the active vertex, edge or face. Off uses the selection bounds')
 
 
 @dataclass
@@ -54,6 +56,19 @@ def components(count, edges):
         yield tuple(sorted(found))
 
 
+def object_points(obj, depsgraph):
+    evaluated = obj.evaluated_get(depsgraph)
+    points = []
+    if obj.type in {'MESH', 'CURVE', 'SURFACE', 'FONT', 'META'}:
+        mesh = evaluated.to_mesh()
+        try:
+            if mesh is not None:
+                points = [evaluated.matrix_world @ v.co for v in mesh.vertices]
+        finally:
+            evaluated.to_mesh_clear()
+    return points or [evaluated.matrix_world.translation.copy()]
+
+
 def collect(context, parts='ISLANDS', minimum=3):
     edit = context.mode == 'EDIT_MESH'
     if context.mode not in {'OBJECT', 'EDIT_MESH'}:
@@ -82,18 +97,7 @@ def collect(context, parts='ISLANDS', minimum=3):
                         continue
                     result.append(Piece(obj, indices, [matrix @ vertices[i].co for i in indices], bm))
                 continue
-        evaluated = obj.evaluated_get(dg)
-        points = []
-        if obj.type in {'MESH', 'CURVE', 'SURFACE', 'FONT', 'META'}:
-            mesh = evaluated.to_mesh()
-            try:
-                if mesh is not None:
-                    points = [evaluated.matrix_world @ v.co for v in mesh.vertices]
-            finally:
-                evaluated.to_mesh_clear()
-        if not points:
-            points = [matrix.translation.copy()]
-        result.append(Piece(obj, None, points))
+        result.append(Piece(obj, None, object_points(obj, dg)))
     if len(result) < minimum:
         raise ValueError('Select at least three objects or disconnected pieces; the two end pieces stay fixed.'
                          if minimum == 3 else 'Select at least two objects or disconnected pieces to align.')
@@ -232,13 +236,43 @@ def distribute(context, axis='AUTO', space='WORLD', parts='ISLANDS'):
     return len(pieces), gap, resolved
 
 
-def align(context, axis='AUTO', space='WORLD', parts='ISLANDS', method='CENTER'):
+def active_reference(context, pieces):
+    """Return the fixed pieces and reference bounds without guessing an edit island."""
+    active = context.active_object
+    candidates = [i for i, p in enumerate(pieces) if p.obj == active]
+    if not candidates:
+        raise ValueError('Select the reference object or mesh piece last so it is active.')
+    if context.mode == 'OBJECT':
+        if len(candidates) == len(pieces):
+            raise ValueError('Select another object to align, or use Edit Mode to choose a reference piece.')
+        return set(candidates), object_points(active, context.evaluated_depsgraph_get())
+    bm = pieces[candidates[0]].bm
+    element = bm.select_history.active
+    if element is None or not element.is_valid or not element.select or element.hide:
+        element = bm.faces.active
+    if element is not None and element.is_valid and element.select and not element.hide:
+        vertices = [element] if isinstance(element, bmesh.types.BMVert) else element.verts
+        vertex = next(iter(vertices)).index
+        for index in candidates:
+            if vertex in pieces[index].indices:
+                return {index}, pieces[index].points
+    if len(candidates) == 1:
+        index = candidates[0]
+        return {index}, pieces[index].points
+    raise ValueError('Select a vertex, edge or face on the reference piece last, then align again.')
+
+
+def align(context, axis='AUTO', space='WORLD', parts='ISLANDS', method='CENTER', to_active=False):
     pieces = collect(context, parts, minimum=2)
+    fixed, reference = active_reference(context, pieces) if to_active else (set(), None)
     basis = axes(space, context.active_object)
-    centers = [p.center for p in pieces]
+    moving = [p for i, p in enumerate(pieces) if i not in fixed]
+    centers = [p.center for p in moving]
     spans = [max(c.dot(v) for c in centers) - min(c.dot(v) for c in centers) for v in basis]
     main = max(range(3), key=lambda i: spans[i])
     indices = [i for i in range(3) if i != main] if axis == 'AUTO' else ['XYZ'.index(axis)]
+    if to_active and len(moving) == 1 and axis == 'AUTO':
+        indices = [0, 1, 2]
     # A rotated/scaled parent may shear local axes. Solve for exact changes in
     # projected coordinates instead of summing non-orthogonal axis vectors.
     from mathutils import Matrix
@@ -251,13 +285,19 @@ def align(context, axis='AUTO', space='WORLD', parts='ISLANDS', method='CENTER')
     for index in indices:
         rows = [(min(v.dot(basis[index]) for v in p.points),
                  max(v.dot(basis[index]) for v in p.points)) for p in pieces]
-        low, high = min(r[0] for r in rows), max(r[1] for r in rows)
+        if reference is not None:
+            low = min(v.dot(basis[index]) for v in reference)
+            high = max(v.dot(basis[index]) for v in reference)
+        else:
+            low, high = min(r[0] for r in rows), max(r[1] for r in rows)
         target = low if method == 'MIN' else high if method == 'MAX' else (low + high) / 2
-        for offset, (lo, hi) in zip(offsets, rows):
+        for i, (offset, (lo, hi)) in enumerate(zip(offsets, rows)):
+            if i in fixed:
+                continue
             current = lo if method == 'MIN' else hi if method == 'MAX' else (lo + hi) / 2
             offset[index] = target - current
     apply(context, [(p, inverse @ delta) for p, delta in zip(pieces, offsets)])
-    return len(pieces), '/'.join('XYZ'[i] for i in indices)
+    return len(moving), '/'.join('XYZ'[i] for i in indices)
 
 
 class HarhtoolsSpacingSettings(bpy.types.PropertyGroup):
@@ -265,6 +305,7 @@ class HarhtoolsSpacingSettings(bpy.types.PropertyGroup):
     space: EnumProperty(name='Axes', items=SPACES, default='WORLD')
     parts: EnumProperty(name='Space', items=PARTS, default='ISLANDS')
     alignment: EnumProperty(name='Align', items=ALIGNMENTS, default='CENTER')
+    to_active: BoolProperty(name='Align to Active', default=False, description=ACTIVE_HELP)
 
 
 class OBJECT_OT_harhtools_even_spacing(bpy.types.Operator):
@@ -307,6 +348,7 @@ class OBJECT_OT_harhtools_align_pieces(bpy.types.Operator):
     space: EnumProperty(name='Axes', items=SPACES, default='WORLD')
     parts: EnumProperty(name='Space', items=PARTS, default='ISLANDS')
     alignment: EnumProperty(name='Align', items=ALIGNMENTS, default='CENTER')
+    to_active: BoolProperty(name='Align to Active', default=False, description=ACTIVE_HELP)
 
     @classmethod
     def poll(cls, context):
@@ -314,11 +356,12 @@ class OBJECT_OT_harhtools_align_pieces(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            count, axis = align(context, self.axis, self.space, self.parts, self.alignment)
+            count, axis = align(context, self.axis, self.space, self.parts, self.alignment, self.to_active)
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
-        self.report({'INFO'}, f'Aligned {count} pieces on {axis}')
+        suffix = ' | Active reference kept fixed' if self.to_active else ''
+        self.report({'INFO'}, f'Aligned {count} pieces on {axis}' + suffix)
         return {'FINISHED'}
 
 
@@ -334,10 +377,16 @@ def draw_panel(layout, context):
     op.axis, op.space, op.parts = cfg.axis, cfg.space, cfg.parts
     box.label(text='Equal edge gaps; end pieces stay fixed.')
     box.prop(cfg, 'alignment')
+    box.prop(cfg, 'to_active')
+    if cfg.to_active:
+        if context.mode == 'EDIT_MESH': box.label(text='Reference: active mesh piece')
+        elif context.active_object: box.label(text='Reference: ' + context.active_object.name)
     row = box.row(); row.scale_y = 1.25
     op = row.operator('object.harhtools_align_pieces', icon='ALIGN_CENTER')
     op.axis, op.space, op.parts, op.alignment = cfg.axis, cfg.space, cfg.parts, cfg.alignment
-    if cfg.axis == 'AUTO': box.label(text='Auto Align straightens the row.')
+    op.to_active = cfg.to_active
+    if cfg.to_active: box.label(text='Active reference stays fixed.')
+    elif cfg.axis == 'AUTO': box.label(text='Auto Align straightens the row.')
     if context.mode == 'EDIT_MESH': box.label(text='Select any part of each disconnected piece.')
 
 

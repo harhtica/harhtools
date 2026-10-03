@@ -198,5 +198,92 @@ bpy.ops.ed.undo(); obj=bpy.data.objects['Undo pieces']; assert coordinates(obj)=
 bpy.ops.ed.redo(); obj=bpy.data.objects['Undo pieces']; assert coordinates(obj)==after
 print('PASS actual operator Undo / Redo')
 
+# Active object is a fixed reference, including all islands in a joined target.
+for method in ('CENTER','MIN','MAX'):
+    clear()
+    source=mesh_object('Source',[(0,1),(3,5)],shifts=[-3,2])
+    target=mesh_object('Active joined reference',[(10,11),(18,20)],shifts=[7,9])
+    select([source,target],target)
+    target_before=coordinates(target); matrix=target.matrix_world.copy(); uv=uv_signature(source)
+    count,axis=tool.align(bpy.context,axis='Z',method=method,to_active=True)
+    assert count==2 and axis=='Z'
+    for p in tool.collect(bpy.context):
+        if p.obj!=source: continue
+        lo,hi=min(v.z for v in p.points),max(v.z for v in p.points)
+        value=lo if method=='MIN' else hi if method=='MAX' else (lo+hi)/2
+        assert abs(value-({'MIN':10,'MAX':20,'CENTER':15}[method]))<1e-6
+    assert coordinates(target)==target_before and target.matrix_world==matrix
+    assert uv_signature(source)==uv
+print('PASS active joined reference remains fixed for center/min/max alignment')
+
+# Auto follows the moving row, not an off-axis reference's remote position.
+clear()
+source=mesh_object('Row',[(0,1),(3,4),(8,9)],shifts=[-.1,.1,.2])
+target=mesh_object('Off-axis reference',[(0,1)],shifts=[100])
+select([source,target],target); before=coordinates(source); target_before=coordinates(target)
+count,axis=tool.align(bpy.context,to_active=True)
+assert count==3 and axis=='X/Y'
+assert coordinates(target)==target_before
+assert all(abs(a.z-b.z)<1e-6 for a,b in zip(before,coordinates(source)))
+assert all(abs(p.center.x-100)<1e-5 for p in tool.collect(bpy.context) if p.obj==source)
+print('PASS Auto active-reference alignment preserves the moving row direction')
+
+# One moving object can be centered onto a rotated target with Auto.
+clear()
+source=mesh_object('Single source',[(0,1)])
+target=mesh_object('Rotated target',[(0,4)])
+target.matrix_world=Matrix.Translation((5,7,12))@Matrix.Rotation(.7,4,'Y')
+select([source,target],target); matrix=target.matrix_world.copy()
+count,axis=tool.align(bpy.context,space='ACTIVE',to_active=True)
+assert count==1 and axis=='X/Y/Z' and target.matrix_world==matrix
+pieces=tool.collect(bpy.context,minimum=2)
+for direction in tool.axes('ACTIVE',target):
+    centers=[(min(v.dot(direction) for v in p.points)+max(v.dot(direction) for v in p.points))/2 for p in pieces]
+    assert abs(centers[0]-centers[1])<1e-5
+print('PASS Auto centers single object to rotated active reference')
+
+# Active vertex, edge and face all resolve to their whole disconnected island.
+for element_type in ('VERT','EDGE','FACE'):
+    clear()
+    obj=mesh_object('Active edit island',[(0,1),(3,4),(8,9)],shifts=[0,2,4]); select([obj])
+    uv=uv_signature(obj); before=coordinates(obj)
+    bpy.ops.object.mode_set(mode='EDIT'); bm=bmesh.from_edit_mesh(obj.data)
+    bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+    for f in bm.faces: f.select_set(True)
+    bm.select_history.clear()
+    element=(bm.verts[4] if element_type=='VERT' else
+             next(e for e in bm.edges if {v.index for v in e.verts}=={4,5}) if element_type=='EDGE' else bm.faces[1])
+    bm.select_history.add(element)
+    tool.align(bpy.context,axis='X',to_active=True)
+    assert coordinates(obj)[4:8]==before[4:8]
+    assert all(abs(p.center.x-2)<1e-6 for p in tool.collect(bpy.context))
+    assert bm.select_history.active==element and bpy.context.mode=='EDIT_MESH'
+    bpy.ops.object.mode_set(mode='OBJECT'); assert uv_signature(obj)==uv
+print('PASS active vertex/edge/face reference in Edit Mode without changing reference or UVs')
+
+# Ambiguous box-selection must not silently choose a reference island.
+clear()
+obj=mesh_object('Ambiguous edit reference',[(0,1),(3,4)],shifts=[0,3]); select([obj])
+bpy.ops.object.mode_set(mode='EDIT'); bm=bmesh.from_edit_mesh(obj.data)
+for f in bm.faces: f.select_set(True)
+bm.select_history.clear(); bm.faces.active=None; before=coordinates(obj)
+try: tool.align(bpy.context,axis='X',to_active=True)
+except ValueError as exc: assert 'reference piece last' in str(exc)
+else: raise AssertionError('Expected an explicit active reference')
+assert coordinates(obj)==before
+bpy.ops.object.mode_set(mode='OBJECT')
+print('PASS ambiguous active island reports how to select it and keeps geometry unchanged')
+
+# The public operator forwards the toggle and participates in real Undo/Redo.
+clear()
+source=mesh_object('Undo source',[(0,1)],shifts=[0])
+target=mesh_object('Undo reference',[(0,1)],shifts=[5]); select([source,target],target)
+bpy.ops.ed.undo_push(message='Before active alignment')
+assert bpy.ops.object.harhtools_align_pieces('EXEC_DEFAULT',True,axis='X',to_active=True)=={'FINISHED'}
+assert abs(source.matrix_world.translation.x-5)<1e-6 and target.matrix_world.translation.x==0
+bpy.ops.ed.undo(); source=bpy.data.objects['Undo source']; assert source.matrix_world.translation.x==0
+bpy.ops.ed.redo(); source=bpy.data.objects['Undo source']; assert abs(source.matrix_world.translation.x-5)<1e-6
+print('PASS active-reference operator toggle and Undo/Redo')
+
 tool.unregister(); display_units.unregister()
 print('ALL SPACING AND ALIGNMENT TESTS PASSED')

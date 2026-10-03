@@ -4,7 +4,16 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.18.0
+## Version 1.18.1
+
+- **Align to Active** in **Fit / Align > Space / Align Pieces** uses the last-selected
+  object as a fixed reference for Center, Min Edge or Max Edge alignment. In Edit
+  Mode, the piece containing the active vertex, edge or face is the reference.
+  Switch it off to keep using the combined selection bounds.
+- Auto preserves the moving row direction while aligning across it. With one
+  moving piece, Auto aligns all three axes to the reference. UVs and sizes stay fixed.
+
+## Included from 1.18.0
 
 - **Fit / Align > Space / Align Pieces** works in Object Mode and Mesh Edit Mode.
   **Distribute Even Gaps** spaces disconnected pieces by their outer mesh edges,
@@ -224,7 +233,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.18.0](https://harhtica.github.io/harhtools/harhtools-1.18.0.zip), or use
+[Download 1.18.1](https://harhtica.github.io/harhtools/harhtools-1.18.1.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).
