@@ -437,7 +437,10 @@ class NODE_OT_harhtools_connect_textures(bpy.types.Operator):
                 self._cleanup(context)
                 return {'CANCELLED'}
             progress = (time.perf_counter()-self._start)/.65
-            if event.type == 'TIMER' and event.timer == self._timer:
+            # Blender's Event exposes the event type, not its Timer handle.
+            # Extra timer events are harmless: progress uses elapsed wall time
+            # and each connection step is applied at most once.
+            if event.type == 'TIMER':
                 self._tick(min(1., progress))
                 if progress < 1:
                     return {'RUNNING_MODAL'}

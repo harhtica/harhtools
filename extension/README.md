@@ -1,11 +1,11 @@
-# harhtools 1.15.0
+# harhtools 1.15.1
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.15.0.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.15.1.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart

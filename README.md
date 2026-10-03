@@ -4,7 +4,13 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.15.0
+## Version 1.15.1
+
+- Fixes Connect Textures cancelling with `'Event' object has no attribute 'timer'`
+  when its animation starts. The animation now uses Blender's supported event
+  type and elapsed time, including when other tools have active timers.
+
+## Included from 1.15.0
 
 - **Connect Textures** in the material Shader Editor header arranges image nodes
   as Base Color, Metallic, Roughness and Normal, then connects them to Principled
@@ -169,7 +175,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.15.0](https://harhtica.github.io/harhtools/harhtools-1.15.0.zip), or use
+[Download 1.15.1](https://harhtica.github.io/harhtools/harhtools-1.15.1.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

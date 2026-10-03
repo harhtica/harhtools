@@ -141,7 +141,13 @@ try:
     state=Harness();assert state.invoke(ctx,None)=={'RUNNING_MODAL'}
     assert bpy.app.driver_namespace[t.STATE_KEY]==state
     state._start=time.perf_counter()-.2
-    assert state.modal(ctx,SimpleNamespace(type='TIMER',timer=state._timer,value='NOTHING'))=={'RUNNING_MODAL'}
+    # Match the real bpy.types.Event interface; it has no `timer` attribute.
+    assert 'timer' not in bpy.types.Event.bl_rna.properties
+    timer_event=SimpleNamespace(type='TIMER',value='NOTHING')
+    assert state.modal(ctx,timer_event)=={'RUNNING_MODAL'}
+    connected=state._connected
+    assert state.modal(ctx,timer_event)=={'RUNNING_MODAL'}
+    assert state._connected==connected,'Extra timer events must not advance the connection sequence'
     assert state.modal(ctx,SimpleNamespace(type='ESC',value='PRESS'))=={'CANCELLED'}
     assert not bpy.app.driver_namespace.get(t.STATE_KEY) and set(bpy.data.images)==images_before
     assert snapshot['nodes']==set(tree5.nodes)
@@ -149,7 +155,7 @@ try:
     assert snapshot['links']==[(l.from_socket,l.to_socket) for l in tree5.links]
     state=Harness();assert state.invoke(ctx,None)=={'RUNNING_MODAL'}
     state._start=time.perf_counter()-1.
-    assert state.modal(ctx,SimpleNamespace(type='TIMER',timer=state._timer,value='NOTHING'))=={'FINISHED'}
+    assert state.modal(ctx,timer_event)=={'FINISHED'}
     check(state._result)
     assert not bpy.app.driver_namespace.get(t.STATE_KEY)
     print(json.dumps({'maps':list(result4['maps']),'ordered_rows':True,'normal_converter_reused':True,
