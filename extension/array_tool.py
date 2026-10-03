@@ -285,7 +285,7 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
         self._inactive=InactiveGuides(context.view_layer,self._area.spaces.active)
         array_material_preview.purge()
         self._native=array_material_preview.MaterialPreview(context.scene,self._area.spaces.active)
-        self._native_dirty=True;self._saving=False
+        self._native_dirty=True;self._native_sources=None;self._saving=False
         self._inactive_dirty=True
         self._sidebar_suspended=not sidebar_is_active(self._area)
         initialize_for_selection(context)
@@ -345,7 +345,12 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
         if geometry and self._plan:
             self._shader,self._cache=preview_geometry(context,self._plan.source_snapshot or self._snapshot)
             self._geometry_dirty=False
-            self._native.clear();self._native_dirty=True
+            source=self._plan.source_snapshot or self._snapshot
+            identities=(source.pointers,source.data_pointers)
+            self._native_dirty=self._native_dirty or identities!=self._native_sources
+            self._native_sources=identities
+            if not self._native_dirty:
+                self._native.matrices=[m.copy() for m in source.matrices]
         if self._plan and self._plan.fit_info:
             self._fit_batch=fit_marker(self._shader,self._plan)
         if self._plan:
@@ -449,7 +454,6 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
         # temporary hide flags out of native operators' undo snapshots.
         if event.type not in {'MOUSEMOVE','INBETWEEN_MOUSEMOVE'}:
             self._inactive.restore(clear_cache=False);self._inactive_dirty=True
-            self._native.clear_objects()
         # Allow fields, popup menus and other sidebar controls to finish their input.
         if self.over_controls(event):return {'PASS_THROUGH'}
         keyconfig=context.window_manager.keyconfigs.active
@@ -843,6 +847,7 @@ def source_updated(_scene,depsgraph):
         pointer=update.id.original.as_pointer()
         if pointer in state._source_ids:
             state._geometry_dirty=True
+            if update.is_updated_geometry:state._native_dirty=True
         if pointer in inactive_ids:
             inactive._cache_signature=None
             state._inactive_dirty=True

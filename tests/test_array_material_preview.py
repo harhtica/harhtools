@@ -45,6 +45,14 @@ try:
         assert obj.data!=source.data and preview.is_preview(obj)
     pool.sync(poses,identity,identity)
     assert ids==[o.as_pointer() for o in pool.objects] and mesh_id==pool.meshes[0].as_pointer()
+    assigned=dict(pool.assigned)
+    pool.sync(poses,identity,identity)
+    assert all(pool.assigned[key] is value for key,value in assigned.items())
+    # Source transforms and genuine mesh edits retain the same visible objects.
+    pool.rebuild(bpy.context,snap)
+    assert pool.ready and ids==[o.as_pointer() for o in pool.objects]
+    assert all(obj.data==pool.meshes[0] for obj in pool.objects)
+    assert len([m for m in bpy.data.meshes if preview.is_preview(m)])==1
     pool.sync(poses[:1],identity,identity)
     assert len(pool.objects)==1 and pool.objects[0].as_pointer()==ids[0]
     print('PASS real alpha material, UVs, shared surface, exact placement and idle object reuse')

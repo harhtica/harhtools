@@ -31,6 +31,7 @@ class MaterialPreview:
         self.objects = []
         self.collection = None
         self.ready = False
+        self.assigned = {}
         self.token = uuid.uuid4().hex
 
     def clear_objects(self):
@@ -39,6 +40,7 @@ class MaterialPreview:
             try: bpy.data.objects.remove(obj, do_unlink=True)
             except (ReferenceError, RuntimeError): pass
         self.objects.clear()
+        self.assigned.clear()
         if self.collection is not None:
             try: bpy.data.collections.remove(self.collection)
             except (ReferenceError, RuntimeError): pass
@@ -53,13 +55,13 @@ class MaterialPreview:
         self.meshes.clear(); self.matrices.clear(); self.colors.clear()
 
     def rebuild(self, context, snapshot):
-        self.clear()
         depsgraph = context.evaluated_depsgraph_get()
+        meshes, matrices, colors = [], [], []
         try:
             for source, matrix in zip(snapshot.sources, snapshot.matrices):
                 evaluated = source.evaluated_get(depsgraph)
                 mesh = bpy.data.meshes.new_from_object(evaluated, preserve_all_data_layers=True, depsgraph=depsgraph)
-                self.meshes.append(mesh)
+                meshes.append(mesh)
                 mesh.name = 'Harhtools Array Preview Surface'
                 mesh[TAG] = self.token
                 # Object-linked material overrides must also survive evaluation.
@@ -67,11 +69,22 @@ class MaterialPreview:
                     material = slot.material.original if slot.material else None
                     if i < len(mesh.materials): mesh.materials[i] = material
                     else: mesh.materials.append(material)
-                self.matrices.append(matrix.copy())
-                self.colors.append(tuple(source.color))
+                matrices.append(matrix.copy())
+                colors.append(tuple(source.color))
         except Exception:
-            self.clear()
+            for mesh in meshes:
+                if mesh.users == 0: bpy.data.meshes.remove(mesh)
             raise
+        # Swap complete surfaces onto existing preview objects in one tick.
+        # Clearing the objects first flashes the wire fallback and recompiles
+        # the viewport draw state while the user drags an array control.
+        old = self.meshes
+        self.meshes, self.matrices, self.colors = meshes, matrices, colors
+        if meshes:
+            for i, obj in enumerate(self.objects): obj.data = meshes[i % len(meshes)]
+        else: self.clear_objects()
+        for mesh in old:
+            if mesh.users == 0: bpy.data.meshes.remove(mesh)
 
     def sync(self, frames, origin, inverse):
         """Reuse objects/meshes during tweening; no writes when poses settle."""
@@ -89,7 +102,9 @@ class MaterialPreview:
                 self.collection.hide_select = True
                 self.scene.collection.children.link(self.collection)
             while len(self.objects) > len(poses):
-                bpy.data.objects.remove(self.objects.pop(), do_unlink=True)
+                obj = self.objects.pop()
+                self.assigned.pop(obj.as_pointer(), None)
+                bpy.data.objects.remove(obj, do_unlink=True)
             while len(self.objects) < len(poses):
                 i = len(self.objects)
                 obj = bpy.data.objects.new('Array Preview', self.meshes[i % len(self.meshes)])
@@ -101,7 +116,11 @@ class MaterialPreview:
                 self.collection.objects.link(obj)
                 if self.space.local_view: obj.local_view_set(self.space, True)
             for obj, (matrix, color) in zip(self.objects, poses):
-                if obj.matrix_world != matrix: obj.matrix_world = matrix
+                previous = self.assigned.get(obj.as_pointer())
+                if previous is None or any(abs(a-b) > 1e-7*max(1.,abs(a),abs(b))
+                        for row_a,row_b in zip(previous,matrix) for a,b in zip(row_a,row_b)):
+                    obj.matrix_world = matrix
+                    self.assigned[obj.as_pointer()] = matrix.copy()
                 if tuple(obj.color) != color: obj.color = color
             self.ready = True
         except Exception:

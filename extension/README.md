@@ -1,4 +1,4 @@
-# harhtools 1.16.1
+# harhtools 1.16.2
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
@@ -33,7 +33,7 @@ Use **Inside Frame** for the existing closed-outline containment tool.
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.16.1.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.16.2.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
