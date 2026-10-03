@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 TESTS = (
+    'test_distribute.py',
     'test_array_join.py',
     'test_array_material_preview.py',
     'test_bake_fit.py',

@@ -4,7 +4,18 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.17.0
+## Version 1.18.0
+
+- **Fit / Align > Space / Align Pieces** works in Object Mode and Mesh Edit Mode.
+  **Distribute Even Gaps** spaces disconnected pieces by their outer mesh edges,
+  preserving the two end pieces, sizes, UVs and topology. Joined arrays work
+  directly; choose **Whole Objects** to keep each object's arrangement together.
+- **Align Pieces** aligns centers, minimum edges or maximum edges. Auto detects
+  the row direction for spacing and aligns across it; X/Y/Z and Global/Active
+  axes provide manual control. Select any vertex, edge or face in an Edit Mode
+  island to move that whole island. Other islands stay untouched. Both support Undo.
+
+## Included from 1.17.0
 
 - **Array > Join Generated**, just above Generate, combines the original and all
   circular or linear copies into one mesh. Materials and UVs are preserved, and
@@ -213,7 +224,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.17.0](https://harhtica.github.io/harhtools/harhtools-1.17.0.zip), or use
+[Download 1.18.0](https://harhtica.github.io/harhtools/harhtools-1.18.0.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

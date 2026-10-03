@@ -326,6 +326,8 @@ class VIEW3D_PT_center_selected_to_active(bpy.types.Panel):
             shortcuts.draw_shortcuts(content,context,compact=True)
         elif tab=='FIT':
             content.label(text='Fit / Align')
+            from . import distribute
+            distribute.draw_panel(content,context)
             fit_tool.draw_panel(content,context)
             from . import display_units
             if context.active_object:
