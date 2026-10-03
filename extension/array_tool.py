@@ -145,7 +145,8 @@ class HARHTOOLS_PG_array(bpy.types.PropertyGroup):
     pivot:EnumProperty(name='Center',items=[('BOUNDS','From Source','Start at the source; Radius places the circle center one radius away'),('ACTIVE','Last Origin','Orbit the last selected object origin, starting at the source position'),('CURSOR','3D Cursor','Orbit the 3D cursor, starting at the source position')],default='BOUNDS',update=pivot_changed)
     rotate_copies:BoolProperty(name='Rotate Copies',description='Turn each complete group with the ring',default=True,update=changed)
     fit_ring:BoolProperty(name='Fit Ring',description='At a fixed center, fit whole copies using the shape\'s angular width. From Source instead fits Radius to Count. Source geometry and the chosen center stay unchanged',default=False,update=fit_changed)
-    fit_side:EnumProperty(name='Fit',items=[('INSIDE','Inside','Fit the inner edges'),('CENTER','Centers','Fit through centers'),('OUTSIDE','Outside','Fit the outer edges')],default='INSIDE',update=changed)
+    fit_side:EnumProperty(name='Fit',items=[('INSIDE','Inside','Fit the inner bounds'),('CENTER','Centers','Fit through the bounds centers'),('OUTSIDE','Outside','Fit the outer bounds'),('CONTACT','Touching Geometry','Fit the evaluated surfaces at their first contact without overlap; does not reshape mismatched edges')],default='INSIDE',update=changed)
+    fit_touching:BoolProperty(name='Touching Geometry',description='Calculate contact between the actual surfaces around the fixed center; off uses their angular bounds',options={'SKIP_SAVE'},get=lambda self:self.fit_side=='CONTACT',set=lambda self,value:setattr(self,'fit_side','CONTACT' if value else 'INSIDE'))
     linked:BoolProperty(name='Linked Copies',description='Share mesh or curve data with the source; disabled gives independent geometry',default=False,update=changed)
     join_generated:BoolProperty(name='Join Generated',description='Join the original and all copies into one mesh, keeping their visible modifiers, materials and UVs. Circular results use the rotation center as their origin',default=False,update=changed)
     resolved_radius:FloatProperty(name='Radius',description='Calculated distance from the chosen center to the source',default=0,subtype='DISTANCE',unit='LENGTH',precision=3,options={'SKIP_SAVE'})
@@ -314,13 +315,15 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
     def refresh(self,context,geometry=False):
         self._cursor=tuple(context.scene.cursor.location)
         angular_fit=self._cfg.mode=='CIRCULAR' and self._cfg.fit_ring and self._cfg.pivot!='BOUNDS'
+        contact_fit=(self._cfg.mode=='CIRCULAR' and self._cfg.fit_ring and self._cfg.fit_side=='CONTACT')
         geometry=geometry or (angular_fit and self._snapshot is not None and not self._snapshot.geometry_points)
+        geometry=geometry or (contact_fit and self._snapshot is not None and self._snapshot.contact_mesh is None)
         geometry=geometry or self._snapshot is None
         if geometry:
             self._inactive_dirty=True
             # Keep retrying if the selection becomes empty or invalid temporarily.
             self._geometry_dirty=True
-            try:self._snapshot=array_core.snapshot(context,geometry=angular_fit)
+            try:self._snapshot=array_core.snapshot(context,geometry=angular_fit,contact=contact_fit)
             except ValueError as exc:
                 self._snapshot=None;self._plan=None;self._cache=[];self._fit_batch=None
                 self._signature=selection_signature(context);self._source_ids=set()
@@ -375,7 +378,7 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
             source_edit=(geometry and identities==self._tween_sources and revision!=self._tween_revision
                          and self._cfg.mode==self._tween_mode)
             self._tween.retarget(transforms,(identities,revision),
-                                 mode=self._cfg.mode,fitted=bool(self._plan.fit_info))
+                                 mode=self._cfg.mode,fitted=bool(self._plan.fit_info or self._plan.contact_info))
             # Source edits replace the cached mesh/frame immediately. Parameter
             # changes tween; reusing an old pose with a new frame would jump.
             if source_edit:self._tween.settle()
@@ -534,6 +537,9 @@ class VIEW3D_OT_harhtools_array(bpy.types.Operator):
         x=max(12*scale,(self._region.width-width)*.5);y=22*scale
         blf.position(0,x+scale,y-scale,0);blf.color(0,.02,.02,.02,.95);blf.draw(0,message)
         blf.position(0,x,y,0);blf.color(0,*cfg.light_color,1);blf.draw(0,message)
+        contact=getattr(self._plan,'contact_info',None)
+        if contact and not self._tween.active():
+            draw_contact_markers(self._region,self._area.spaces.active.region_3d,contact['points'],scale)
 
     def finish(self,context=None):
         if self._done:return
@@ -689,6 +695,28 @@ def draw_direction(layout,context):
     for value,label in [('WORLD','Global'),('ACTIVE','Last')]:row.prop_enum(cfg,'orientation',value,text=label)
 
 
+def draw_contact_markers(region,region_3d,points,scale):
+    import gpu
+    from gpu_extras.batch import batch_for_shader
+    from bpy_extras.view3d_utils import location_3d_to_region_2d
+    positions=[]
+    for point in points[:64]:
+        center=location_3d_to_region_2d(region,region_3d,point)
+        if center is None:continue
+        x,y=center;r=6*scale
+        positions.extend(((x-r,y),(x+r,y),(x,y-r),(x,y+r)))
+    if not positions:return
+    shader=gpu.shader.from_builtin('UNIFORM_COLOR')
+    batch=batch_for_shader(shader,'LINES',{'pos':positions})
+    old_width=gpu.state.line_width_get();old_blend=gpu.state.blend_get()
+    try:
+        gpu.state.blend_set('ALPHA');shader.bind()
+        gpu.state.line_width_set(4*scale);shader.uniform_float('color',(.02,.02,.02,1));batch.draw(shader)
+        gpu.state.line_width_set(2*scale);shader.uniform_float('color',(.3,1.,.55,1));batch.draw(shader)
+    finally:
+        gpu.state.line_width_set(old_width);gpu.state.blend_set(old_blend)
+
+
 def draw_pattern(layout,context):
     cfg=settings(context);state=preview_state()
     column=layout.column(align=False);column.scale_y=shortcuts.CONTROL_HEIGHT
@@ -736,9 +764,17 @@ def draw_pattern(layout,context):
                 remaining=state._plan.ring_info['remainder']
                 if remaining>0:
                     column.label(text=f'{math.degrees(remaining):.2f}\N{DEGREE SIGN} left open')
-        if cfg.fit_ring and cfg.pivot=='BOUNDS':
-            row=column.row(align=False)
-            for value,label in [('INSIDE','Inside'),('CENTER','Centers'),('OUTSIDE','Outside')]:row.prop_enum(cfg,'fit_side',value,text=label)
+        if cfg.fit_ring:
+            if cfg.pivot=='BOUNDS':column.prop(cfg,'fit_side',text='Fit')
+            else:_toggle_label(column,cfg,'fit_touching','Touching Geometry')
+            if cfg.pivot!='BOUNDS' and cfg.fit_side=='CONTACT':
+                column.label(text='Center fixed; spacing calculated')
+            contact=getattr(state._plan,'contact_info',None) if state and state._plan else None
+            if contact:
+                if contact['seam_limited']:
+                    column.label(text='End seam limits the fit',icon='INFO')
+                    column.label(text='Reduce Sweep or use 360 degrees')
+                else:column.label(text='Green marks: surface contact')
     _toggle_label(column,cfg,'linked','Linked Copies',enabled=not cfg.join_generated)
 
 

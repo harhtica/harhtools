@@ -1,6 +1,25 @@
-# harhtools 1.19.2
+# harhtools 1.20.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
+
+## Fit neighboring surfaces
+
+Choose **Array > Circular > Center: 3D Cursor**, enable **Fit Ring** and
+**Touching Geometry**. The center stays exactly at the cursor. The tool solves
+the angle at which neighboring evaluated mesh surfaces first touch and displays
+the number of whole copies fitting inside **Sweep**. Moving the cursor updates
+that spacing. Source geometry, size, UVs and cursor position stay unchanged.
+Green marks show the contact points once the preview settles.
+
+With **Center: Source**, choose **Fit: Touching Geometry** to solve the radius
+at the current Sweep and Count instead. **Flip Bend** and negative Sweep work.
+If an almost closed arc makes the end seam tighter than the other gaps, the tool
+fits that limiting contact and reports it. Reduce Sweep or use a full 360-degree
+ring to change that constraint.
+
+This fits actual evaluated faces, including slanted and disconnected pieces.
+It stops at first surface contact and does not reshape, weld or seal mismatched
+edges. Transparent texture padding is still part of its underlying mesh surface.
 
 Circular **Sweep** accepts angles from **-360 to 360 degrees** (except zero).
 Negative angles reverse the direction, including with Fit Ring enabled. The

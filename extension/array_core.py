@@ -3,7 +3,7 @@
 Spacing and active orientation adapt harhtools' Roblox Arrange module. Rings
 keep the original as the first slot. Preview rendering lives in array_tool.py.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 
 import bpy
@@ -25,6 +25,8 @@ class Snapshot:
     data_pointers: tuple
     per_source_bounds: tuple = ()
     geometry_points: tuple = ()
+    contact_mesh: object = None
+    contact_cache: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -38,6 +40,7 @@ class Plan:
     source_snapshot: object = None
     fit_info: object = None
     ring_info: object = None
+    contact_info: object = None
 
 
 def _bounds(points):
@@ -54,7 +57,7 @@ def _geometry_point(matrix, point):
                  for i in range(3))
 
 
-def snapshot(context, *, geometry=False):
+def snapshot(context, *, geometry=False, contact=False):
     """Read selected geometry and evaluated bounds without changing the scene."""
     if context.mode != 'OBJECT':
         raise ValueError('Switch to Object Mode to array the selected objects.')
@@ -69,6 +72,7 @@ def snapshot(context, *, geometry=False):
         active = sources[-1]
     depsgraph = context.evaluated_depsgraph_get()
     matrices, points, per_source, geometry_points = [], [], [], []
+    contact_vertices, contact_triangles = [], []
     for obj in sources:
         evaluated = obj.evaluated_get(depsgraph)
         matrix = evaluated.matrix_world.copy()
@@ -96,12 +100,23 @@ def snapshot(context, *, geometry=False):
                         geometry_points.extend(_geometry_point(matrix, vertex.co) for vertex in mesh.vertices)
                 finally:
                     evaluated.to_mesh_clear()
+        if contact:
+            mesh = evaluated.to_mesh()
+            try:
+                if mesh:
+                    mesh.calc_loop_triangles()
+                    offset = len(contact_vertices)
+                    contact_vertices.extend(_geometry_point(matrix, v.co) for v in mesh.vertices)
+                    contact_triangles.extend(tuple(offset+i for i in t.vertices) for t in mesh.loop_triangles)
+            finally:
+                evaluated.to_mesh_clear()
     if not all(math.isfinite(x) for point in points for x in point):
         raise ValueError('The selection contains invalid geometry coordinates.')
     return Snapshot(sources, tuple(matrices), tuple(points),
                     active.evaluated_get(depsgraph).matrix_world.copy(), active,
                     tuple(o.as_pointer() for o in sources),
-                    tuple(o.data.as_pointer() for o in sources), tuple(per_source), tuple(geometry_points))
+                    tuple(o.data.as_pointer() for o in sources), tuple(per_source), tuple(geometry_points),
+                    (tuple(contact_vertices), tuple(contact_triangles)) if contact else None)
 
 
 def _finite(value, label):
@@ -225,6 +240,32 @@ def angular_fit(points, pivot, axis, sweep):
                 closes=remainder == 0.0 and slots > 0)
 
 
+def _contact_fit(snap, anchor, axis, radial, step, count, full):
+    from . import array_contact
+    if snap.contact_mesh is None:
+        raise ValueError('Touching Geometry needs fresh surfaces; restart the preview.')
+    angles = [(step, False)]
+    seam = math.tau-abs(step)*count
+    if not full and 1e-6 < seam < math.pi:
+        angles.append((math.copysign(seam, step), True))
+    results = []
+    for angle, is_seam in angles:
+        key = (tuple(anchor), tuple(axis), tuple(radial), angle)
+        if key not in snap.contact_cache:
+            result = array_contact.solve(snap.contact_mesh, anchor, axis, radial, angle)
+            if len(snap.contact_cache) >= 16: snap.contact_cache.pop(next(iter(snap.contact_cache)))
+            snap.contact_cache[key] = result
+        results.append((snap.contact_cache[key], is_seam))
+    result, is_seam = max(results, key=lambda item: item[0]['radius'])
+    radius = result['radius']
+    pivot = anchor-radial*radius
+    def pose(i):
+        return Matrix.Translation(pivot) @ Matrix.Rotation(step*i, 4, axis) @ Matrix.Translation(-pivot)
+    points = ([pose(count) @ result['point']] if is_seam else
+              [pose(i) @ result['point'] for i in range(count)])
+    return radius, dict(points=points, seam_limited=is_seam, error=result['error'])
+
+
 def _base_plan(snap, cfg, scene):
     """Return group transforms; no datablocks or source properties are changed."""
     orientation = getattr(cfg, 'orientation', 'WORLD')
@@ -271,6 +312,7 @@ def _base_plan(snap, cfg, scene):
     pivot_mode = getattr(cfg, 'pivot', 'BOUNDS')
     axis = frame.to_3x3() @ _AXES[axis_name]
     axis.normalize()
+    contact_info = None
     if pivot_mode == 'BOUNDS':
         radius = _finite(cfg.radius, 'Radius')
     elif pivot_mode in {'ACTIVE', 'CURSOR'}:
@@ -301,13 +343,18 @@ def _base_plan(snap, cfg, scene):
         if tangent <= 1e-8:
             raise ValueError('The sweep is too small to fit a ring.')
         side = cfg.fit_side
-        if side not in {'INSIDE', 'CENTER', 'OUTSIDE'}:
-            raise ValueError('Choose Inside, Center or Outside for Fit Ring.')
-        shift = {'INSIDE': depth * .5, 'CENTER': 0, 'OUTSIDE': -depth * .5}[side]
-        # Keep degenerate/outside solutions positive without importing a
-        # fixed Roblox stud-size floor into Blender's arbitrary scene units.
-        minimum_radius = max(width, depth) * 1e-6
-        radius = max(width / (2 * tangent) + shift, minimum_radius)
+        if side == 'CONTACT':
+            bend = -1 if getattr(cfg, 'flip_bend', False) else 1
+            radial = frame.to_3x3() @ (_AXES['Z'] if axis_name == 'X' else _AXES['X']) * bend
+            radius, contact_info = _contact_fit(snap, anchor, axis, radial, step*bend, count, full)
+        else:
+            if side not in {'INSIDE', 'CENTER', 'OUTSIDE'}:
+                raise ValueError('Choose a Fit Ring boundary.')
+            shift = {'INSIDE': depth * .5, 'CENTER': 0, 'OUTSIDE': -depth * .5}[side]
+            # Keep degenerate/outside solutions positive without importing a
+            # fixed Roblox stud-size floor into Blender's arbitrary scene units.
+            minimum_radius = max(width, depth) * 1e-6
+            radius = max(width / (2 * tangent) + shift, minimum_radius)
     if radius <= 0:
         raise ValueError('Radius must be greater than 0.')
     if pivot_mode == 'BOUNDS':
@@ -324,6 +371,24 @@ def _base_plan(snap, cfg, scene):
         if not cfg.rotate_copies:
             raise ValueError('Enable Rotate Copies to fit the ring edges.')
         ring_info = angular_fit(snap.geometry_points, pivot, axis, sweep)
+        if getattr(cfg, 'fit_side', '') == 'CONTACT':
+            from . import array_contact
+            if snap.contact_mesh is None:
+                raise ValueError('Touching Geometry needs fresh surfaces; restart the preview.')
+            sign = math.copysign(1, sweep)
+            key = ('ANGLE', tuple(pivot), tuple(axis), sign)
+            if key not in snap.contact_cache:
+                result = array_contact.solve_angle(snap.contact_mesh, pivot, axis, sign, abs(ring_info['step']))
+                if len(snap.contact_cache) >= 16: snap.contact_cache.pop(next(iter(snap.contact_cache)))
+                snap.contact_cache[key] = result
+            result = snap.contact_cache[key]
+            span = abs(result['step'])
+            slots = max(0, math.floor((abs(sweep)+1e-4)/span))
+            remainder = max(0., abs(sweep)-slots*span)
+            if remainder < 1e-4: remainder = 0.
+            ring_info = dict(count=max(0, slots-1), total=slots, step=result['step'],
+                             remainder=remainder, closes=remainder==0 and slots>0)
+            contact_info = dict(points=[], seam_limited=False, fixed_center=True, error=result['error'])
         count, step = ring_info['count'], ring_info['step']
         total = _capacity(count, len(snap.sources))
     transforms = []
@@ -337,7 +402,11 @@ def _base_plan(snap, cfg, scene):
             destination = pivot + rotation.to_3x3() @ (anchor - pivot)
             transform = Matrix.Translation(destination - anchor)
         transforms.append(transform)
-    return Plan(tuple(transforms), pivot, axis, radius, total, frame, ring_info=ring_info)
+    if contact_info and contact_info.get('fixed_center'):
+        contact_info['points'] = [result['point']] if count else []
+        contact_info['points'].extend(transform @ result['point'] for transform in transforms[:-1])
+    return Plan(tuple(transforms), pivot, axis, radius, total, frame,
+                ring_info=ring_info, contact_info=contact_info)
 
 
 def deformation_paused(cfg):

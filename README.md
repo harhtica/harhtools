@@ -4,7 +4,19 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.19.2
+## Version 1.20.0
+
+- **Array > Center: 3D Cursor > Fit Ring > Touching Geometry** fits neighboring
+  evaluated surfaces around the exact cursor position. It calculates the contact
+  angle and whole-copy count within Sweep, leaving the original and cursor fixed.
+- Green marks identify actual surface contacts in the preview. Source-centered
+  arrays offer the same method as **Fit: Touching Geometry**, calculating radius
+  from the current angle. A tighter end seam is reported when it limits the fit.
+- Contact fitting handles slanted and disconnected geometry, uses the same poses
+  for preview and Generate, and preserves materials and UVs. It fits first surface
+  contact; it does not reshape or weld mismatched edges.
+
+## Included from 1.19.2
 
 - **Array > Pattern > Flip Bend**, available with **Center: Source**, curves a
   circular row to the opposite side while preserving its starting travel

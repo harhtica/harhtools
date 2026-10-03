@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 TESTS = (
+    'test_array_contact.py',
     'test_array_bend.py',
     'test_array_sweep.py',
     'test_array_deform.py',
