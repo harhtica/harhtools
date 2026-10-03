@@ -1,11 +1,11 @@
-# harhtools 1.14.0
+# harhtools 1.15.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.14.0.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.15.0.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
@@ -340,6 +340,36 @@ can contain poles. Originals remain recoverable after confirmation; the finished
 mesh itself is not a procedural inset modifier. Turn Safe Inset off to reject
 widths that change the boundary topology. NURBS, open paths,
 nonplanar shapes and ambiguous intersecting source loops are not supported.
+
+## Shader Editor: Connect Textures
+
+Drop Image Texture nodes into the material Shader Editor, select the maps you
+want, and click **Connect Textures** in its top header. The button arranges the
+textures in Base Color, Metallic, Roughness, Normal order and connects them in a
+short, smooth sequence. It uses the active/selected Principled BSDF, or the one
+feeding the material output. If none exists, it creates one.
+
+Names such as `ColorMap`, `BaseColor`, `Albedo`, `MetalnessMap`, `Metallic`,
+`RoughnessMap`, `NormalMap`, and `nor_gl` identify the maps. An explicit Image
+Texture node label can override a file name. Unconnected recognized maps are
+picked automatically if no selected map exists for their role; multiple candidates
+ask you to select the one to use. Unknown maps and packed ORM/metallic-roughness
+maps are skipped rather than assigned to an incorrect input.
+
+- Base Color: Color output to Principled Base Color; transparent RGBA also
+  connects its Alpha output to Principled Alpha. Opaque, ignored or channel-packed
+  alpha does not enable transparency. UDIM alpha is not automatically detected.
+- Metallic/Roughness: Non-Color, Color output to the corresponding shader input.
+- Normal: Non-Color, Color output to Normal Map Color; Normal output to Principled
+  Normal. Existing converters are reused when possible.
+
+The shader and its directly connected output stay beside the ordered texture
+column, and the finished setup is framed in the editor. Images shared elsewhere are isolated when their color space must change,
+so another material's use of that image keeps its interpretation. **Esc** cancels
+and restores the graph during the animation; **Enter / Ctrl+A** finishes it at
+once. The completed action supports ordinary Undo. The button operates on the
+currently edited shader tree, including material node groups, and is hidden in
+World, Geometry Nodes and Compositor editors.
 
 ## Reload installed updates without reverting the file
 

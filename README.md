@@ -4,7 +4,16 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.14.0
+## Version 1.15.0
+
+- **Connect Textures** in the material Shader Editor header arranges image nodes
+  as Base Color, Metallic, Roughness and Normal, then connects them to Principled
+  BSDF with a short animated sequence. Select a set to resolve duplicate maps.
+- Data maps become Non-Color; normals pass through a Normal Map node. Real
+  base-color transparency connects to Alpha. Repeated clicks reuse the converter.
+  Esc restores the graph during animation; finished changes support normal Undo.
+
+## Included from 1.14.0
 
 - Sharp **Safe Inset** now works like a normal Make Outline: one matching inner
   vertex per outer vertex, connected by a single quad strip. **Ctrl+R** continues
@@ -160,7 +169,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.14.0](https://harhtica.github.io/harhtools/harhtools-1.14.0.zip), or use
+[Download 1.15.0](https://harhtica.github.io/harhtools/harhtools-1.15.0.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

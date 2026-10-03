@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "harhtools"
-version = "1.14.0"
+version = "1.15.0"
 name = "harhtools"
 tagline = "Build editable curves, trim paths, array and align objects"
 maintainer = "harhtools"
@@ -13,4 +13,4 @@ license = ["SPDX:GPL-3.0-or-later"]
 files = "Save color themes and reusable shape presets in user storage"
 
 [build]
-paths = ["__init__.py", "shape_builder.py", "curve_geometry.py", "fill_groups.py", "outline_geometry.py", "outline_safe.py", "outline_clamp.py", "outline_mesh.py", "outline_bevel.py", "outline_profiles.py", "profile_editor.py", "display_units.py", "outline_preview.py", "circle_arc.py", "edit_arc.py", "outline_snap.py", "outline_pick.py", "outline_tool.py", "live_reload.py", "shape_library.py", "intersection_cuts.py", "centering.py", "fit_tool.py", "icons.py", "shortcuts.py", "section_drag.py", "array_core.py", "array_inference.py", "array_tween.py", "array_tool.py", "README.md", "LICENSE"]
+paths = ["__init__.py", "shape_builder.py", "curve_geometry.py", "fill_groups.py", "outline_geometry.py", "outline_safe.py", "outline_clamp.py", "outline_mesh.py", "outline_bevel.py", "outline_profiles.py", "profile_editor.py", "display_units.py", "outline_preview.py", "circle_arc.py", "edit_arc.py", "outline_snap.py", "outline_pick.py", "outline_tool.py", "live_reload.py", "shape_library.py", "intersection_cuts.py", "centering.py", "fit_tool.py", "texture_connect.py", "icons.py", "shortcuts.py", "section_drag.py", "array_core.py", "array_inference.py", "array_tween.py", "array_tool.py", "README.md", "LICENSE"]
