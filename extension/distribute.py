@@ -13,8 +13,6 @@ AXES = [('AUTO', 'Auto', 'Use the axis with the largest spread between pieces'),
         ('X', 'X', ''), ('Y', 'Y', ''), ('Z', 'Z', '')]
 SPACES = [('WORLD', 'Global', 'Use world axes'),
           ('ACTIVE', 'Active', 'Use the active object axes')]
-PARTS = [('ISLANDS', 'Disconnected Pieces', 'Treat each disconnected mesh island as a separate piece'),
-         ('OBJECTS', 'Whole Objects', 'Keep all geometry inside each object together')]
 ALIGNMENTS = [('CENTER', 'Center', 'Align piece centers to the reference or selection bounds center'),
               ('MIN', 'Min Edge', 'Align the lowest edges'),
               ('MAX', 'Max Edge', 'Align the highest edges')]
@@ -70,6 +68,8 @@ def object_points(obj, depsgraph):
 
 
 def collect(context, parts='ISLANDS', minimum=3):
+    # Keep the old argument compatible with scripts, but selection mode is now
+    # authoritative. Saved ISLANDS settings must never split Object Mode groups.
     edit = context.mode == 'EDIT_MESH'
     if context.mode not in {'OBJECT', 'EDIT_MESH'}:
         raise ValueError('Use Object Mode or Mesh Edit Mode.')
@@ -80,27 +80,22 @@ def collect(context, parts='ISLANDS', minimum=3):
         if not obj.is_editable:
             raise ValueError(f'{obj.name}: use a local, editable object.')
         matrix = obj.matrix_world.copy()
-        if obj.type == 'MESH' and (edit or parts == 'ISLANDS'):
-            bm = bmesh.from_edit_mesh(obj.data) if edit else None
-            if bm:
-                bm.verts.ensure_lookup_table()
-                bm.verts.index_update()
-                vertices = bm.verts
-                edges = [tuple(v.index for v in e.verts) for e in bm.edges]
-            else:
-                vertices = obj.data.vertices
-                edges = [tuple(e.vertices) for e in obj.data.edges]
-            islands = list(components(len(vertices), edges))
-            if edit or len(islands) > 1:
-                for indices in islands:
-                    if edit and not any(vertices[i].select and not vertices[i].hide for i in indices):
-                        continue
-                    result.append(Piece(obj, indices, [matrix @ vertices[i].co for i in indices], bm))
-                continue
+        if obj.type == 'MESH' and edit:
+            bm = bmesh.from_edit_mesh(obj.data)
+            bm.verts.ensure_lookup_table()
+            bm.verts.index_update()
+            vertices = bm.verts
+            edges = [tuple(v.index for v in e.verts) for e in bm.edges]
+            for indices in components(len(vertices), edges):
+                if not any(vertices[i].select and not vertices[i].hide for i in indices):
+                    continue
+                result.append(Piece(obj, indices, [matrix @ vertices[i].co for i in indices], bm))
+            continue
         result.append(Piece(obj, None, object_points(obj, dg)))
     if len(result) < minimum:
-        raise ValueError('Select at least three objects or disconnected pieces; the two end pieces stay fixed.'
-                         if minimum == 3 else 'Select at least two objects or disconnected pieces to align.')
+        noun = 'disconnected pieces' if edit else 'objects (each joined group counts as one)'
+        raise ValueError(f'Select at least three {noun}; the two ends stay fixed.'
+                         if minimum == 3 else f'Select at least two {noun} to align.')
     if edit:
         # One shared edit mesh cannot receive different world-space movements.
         for piece in result:
@@ -303,7 +298,6 @@ def align(context, axis='AUTO', space='WORLD', parts='ISLANDS', method='CENTER',
 class HarhtoolsSpacingSettings(bpy.types.PropertyGroup):
     axis: EnumProperty(name='Axis', items=AXES, default='AUTO')
     space: EnumProperty(name='Axes', items=SPACES, default='WORLD')
-    parts: EnumProperty(name='Space', items=PARTS, default='ISLANDS')
     alignment: EnumProperty(name='Align', items=ALIGNMENTS, default='CENTER')
     to_active: BoolProperty(name='Align to Active', default=False, description=ACTIVE_HELP)
 
@@ -311,13 +305,12 @@ class HarhtoolsSpacingSettings(bpy.types.PropertyGroup):
 class OBJECT_OT_harhtools_even_spacing(bpy.types.Operator):
     bl_idname = 'object.harhtools_even_spacing'
     bl_label = 'Distribute Even Gaps'
-    bl_description = ('Equalize edge-to-edge gaps without resizing. Keep the first and last pieces fixed. '
-                      'In Edit Mode, selecting any vertex moves its whole disconnected piece')
+    bl_description = ('Equalize edge-to-edge gaps without resizing. Object Mode moves each whole object, '
+                      'keeping joined groups intact. Edit Mode moves selected disconnected pieces. The two ends stay fixed')
     bl_options = {'REGISTER', 'UNDO'}
 
     axis: EnumProperty(name='Axis', items=AXES, default='AUTO')
     space: EnumProperty(name='Axes', items=SPACES, default='WORLD')
-    parts: EnumProperty(name='Space', items=PARTS, default='ISLANDS')
 
     @classmethod
     def poll(cls, context):
@@ -328,7 +321,7 @@ class OBJECT_OT_harhtools_even_spacing(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            count, gap, axis = distribute(context, self.axis, self.space, self.parts)
+            count, gap, axis = distribute(context, self.axis, self.space)
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
@@ -341,12 +334,11 @@ class OBJECT_OT_harhtools_even_spacing(bpy.types.Operator):
 class OBJECT_OT_harhtools_align_pieces(bpy.types.Operator):
     bl_idname = 'object.harhtools_align_pieces'
     bl_label = 'Align Pieces'
-    bl_description = ('Align centers or edges without resizing. Auto straightens the row across its long axis. '
-                      'Select X, Y or Z to align on a specific axis. Edit Mode moves whole disconnected pieces')
+    bl_description = ('Align centers or edges without resizing. Object Mode keeps each joined group intact. '
+                      'Edit Mode moves selected disconnected pieces. Auto straightens the row across its long axis')
     bl_options = {'REGISTER', 'UNDO'}
     axis: EnumProperty(name='Axis', items=AXES, default='AUTO')
     space: EnumProperty(name='Axes', items=SPACES, default='WORLD')
-    parts: EnumProperty(name='Space', items=PARTS, default='ISLANDS')
     alignment: EnumProperty(name='Align', items=ALIGNMENTS, default='CENTER')
     to_active: BoolProperty(name='Align to Active', default=False, description=ACTIVE_HELP)
 
@@ -356,7 +348,7 @@ class OBJECT_OT_harhtools_align_pieces(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            count, axis = align(context, self.axis, self.space, self.parts, self.alignment, self.to_active)
+            count, axis = align(context, self.axis, self.space, method=self.alignment, to_active=self.to_active)
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
@@ -369,12 +361,12 @@ def draw_panel(layout, context):
     cfg = context.window_manager.harhtools_spacing
     box = layout.box()
     box.label(text='Space / Align Pieces')
-    if context.mode != 'EDIT_MESH': box.prop(cfg, 'parts')
+    box.label(text='Selected pieces' if context.mode == 'EDIT_MESH' else 'Whole objects / joined groups')
     box.row(align=True).prop(cfg, 'axis', expand=True)
     box.row(align=True).prop(cfg, 'space', expand=True)
     row = box.row(); row.scale_y = 1.25
     op = row.operator('object.harhtools_even_spacing', icon='ALIGN_JUSTIFY')
-    op.axis, op.space, op.parts = cfg.axis, cfg.space, cfg.parts
+    op.axis, op.space = cfg.axis, cfg.space
     box.label(text='Equal edge gaps; end pieces stay fixed.')
     box.prop(cfg, 'alignment')
     box.prop(cfg, 'to_active')
@@ -383,7 +375,7 @@ def draw_panel(layout, context):
         elif context.active_object: box.label(text='Reference: ' + context.active_object.name)
     row = box.row(); row.scale_y = 1.25
     op = row.operator('object.harhtools_align_pieces', icon='ALIGN_CENTER')
-    op.axis, op.space, op.parts, op.alignment = cfg.axis, cfg.space, cfg.parts, cfg.alignment
+    op.axis, op.space, op.alignment = cfg.axis, cfg.space, cfg.alignment
     op.to_active = cfg.to_active
     if cfg.to_active: box.label(text='Active reference stays fixed.')
     elif cfg.axis == 'AUTO': box.label(text='Auto Align straightens the row.')

@@ -4,7 +4,15 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.18.1
+## Version 1.18.2
+
+- Spacing and alignment now always move **whole objects in Object Mode**. Joined
+  groups retain their internal arrangement, even with an older saved Disconnected
+  Pieces setting. Object Mode measures the outside of each whole group.
+- **Edit Mode** still spaces and aligns selected disconnected pieces. The old
+  object/piece selector is replaced with a label showing what will move.
+
+## Included from 1.18.1
 
 - **Align to Active** in **Fit / Align > Space / Align Pieces** uses the last-selected
   object as a fixed reference for Center, Min Edge or Max Edge alignment. In Edit
@@ -233,7 +241,7 @@ Requires Blender 4.2 or newer; tested on Blender 5.2.
   creation. Original shapes stay recoverable.
 - **Round** corners and the previous **Curve Outline** result remain optional.
 
-[Download 1.18.1](https://harhtica.github.io/harhtools/harhtools-1.18.1.zip), or use
+[Download 1.18.2](https://harhtica.github.io/harhtools/harhtools-1.18.2.zip), or use
 the Blender repository below. Reverting a blend file does not reload Python code.
 See [tool controls](extension/README.md), [release verification](VERIFICATION.md),
 and [regression tests](tests/README.md).

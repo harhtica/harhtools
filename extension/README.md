@@ -1,21 +1,22 @@
-# harhtools 1.18.1
+# harhtools 1.18.2
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
 ## Space and align pieces
 
 Open **Fit / Align > Space / Align Pieces** in Object Mode or Mesh Edit Mode.
-**Distribute Even Gaps** uses the pieces' outer mesh edges, so different sizes
-still get equal gaps. At least three pieces are needed: the two ends stay fixed
+**Distribute Even Gaps** uses the outer mesh edges, so different sizes
+still get equal gaps. At least three objects (or Edit Mode pieces) are needed: the two ends stay fixed
 and the middle pieces move. Their sizes, UVs and topology are preserved.
 If the fixed span is too short, the report shows the equal overlap instead.
 
-**Disconnected Pieces** recognizes separate islands inside a joined mesh.
-**Whole Objects** keeps each selected object's internal arrangement together.
-In Edit Mode, select any vertex, edge or face in each disconnected piece you
+**Object Mode always moves whole objects**, keeping each joined group's internal
+arrangement together. This also applies to Align Pieces and Align to Active.
+Old Disconnected Pieces settings cannot split an object in Object Mode.
+In **Edit Mode**, select any vertex, edge or face in each disconnected piece you
 want to move. The complete touched islands move rigidly; untouched islands stay
-put. Multi-object Edit Mode is supported. Shared object-mode mesh data is copied
-when needed so unselected linked objects are not changed.
+put. Multi-object Edit Mode is supported. Object Mode preserves mesh data and
+UVs, including shared data; unselected linked objects are not moved.
 
 **Align Pieces** aligns centers, minimum edges or maximum edges to the combined
 selection bounds. **Auto** spaces along the axis with the largest spread and
@@ -82,7 +83,7 @@ Use **Inside Frame** for the existing closed-outline containment tool.
 ## Install
 
 In Blender, open **Edit > Preferences > Get Extensions**, open its menu, and choose
-**Install from Disk**. Select `harhtools-1.18.1.zip` and enable harhtools. Press **N**
+**Install from Disk**. Select `harhtools-1.18.2.zip` and enable harhtools. Press **N**
 in the 3D View and open the **harhtools** sidebar tab.
 
 If an older standalone script or legacy add-on is running, disable it and restart
