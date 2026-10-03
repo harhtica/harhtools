@@ -1,4 +1,4 @@
-# harhtools 1.19.1
+# harhtools 1.19.2
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
 
@@ -6,6 +6,14 @@ Circular **Sweep** accepts angles from **-360 to 360 degrees** (except zero).
 Negative angles reverse the direction, including with Fit Ring enabled. The
 same angle magnitude keeps the same fit radius, spacing and count. Both full
 circle directions avoid a duplicate copy at the seam.
+
+To curve outward instead of inward, use **Array > Pattern > Flip Bend** with
+**Center: Source**. This puts the center on the other side of the source and
+reverses the turn together, keeping the initial travel direction. The original
+stays fixed and copies keep their geometry and UVs. Fit Ring still works, and
+Join Generated places the origin at the flipped center. Negative Sweep instead
+changes which direction the row travels. Last and 3D Cursor centers are explicit
+fixed locations, so Flip Bend is only available with Source.
 
 ## Gradual array changes
 

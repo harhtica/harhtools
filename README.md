@@ -4,7 +4,16 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.19.1
+## Version 1.19.2
+
+- **Array > Pattern > Flip Bend**, available with **Center: Source**, curves a
+  circular row to the opposite side while preserving its starting travel
+  direction. The source stays fixed and the geometry is not mirrored.
+- Works with Fit Ring and either Sweep sign. Negative Sweep still reverses
+  travel; Flip Bend changes the curvature. Joined results use the flipped
+  rotation center as their origin. Explicit Last/3D Cursor centers stay fixed.
+
+## Included from 1.19.1
 
 - Circular **Sweep** now accepts negative angles down to **-360 degrees** to
   reverse the array. Positive and negative sweeps keep the same fit radius,

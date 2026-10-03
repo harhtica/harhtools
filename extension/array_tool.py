@@ -141,6 +141,7 @@ class HARHTOOLS_PG_array(bpy.types.PropertyGroup):
     radial_axis:EnumProperty(name='Axis',items=[('X','X','Ring lies in YZ'),('Y','Y','Ring lies in XZ'),('Z','Z','Ring lies in XY')],default='Z',update=changed)
     radius:FloatProperty(name='Radius',description='Distance from the ring center to each copied group center',default=1,min=.00001,soft_max=100,subtype='DISTANCE',unit='LENGTH',precision=3,update=changed)
     sweep:FloatProperty(name='Sweep',description='Total arc angle; negative values reverse direction. A full circle in either direction has no duplicate at the seam',default=math.tau,min=-math.tau,max=math.tau,subtype='ANGLE',unit='ROTATION',update=changed)
+    flip_bend:BoolProperty(name='Flip Bend',description='With Center set to Source, bend to the opposite side while keeping the same starting direction. The source stays fixed; works with Fit Ring',default=False,update=changed)
     pivot:EnumProperty(name='Center',items=[('BOUNDS','From Source','Start at the source; Radius places the circle center one radius away'),('ACTIVE','Last Origin','Orbit the last selected object origin, starting at the source position'),('CURSOR','3D Cursor','Orbit the 3D cursor, starting at the source position')],default='BOUNDS',update=pivot_changed)
     rotate_copies:BoolProperty(name='Rotate Copies',description='Turn each complete group with the ring',default=True,update=changed)
     fit_ring:BoolProperty(name='Fit Ring',description='At a fixed center, fit whole copies using the shape\'s angular width. From Source instead fits Radius to Count. Source geometry and the chosen center stay unchanged',default=False,update=fit_changed)
@@ -725,6 +726,8 @@ def draw_pattern(layout,context):
         row.enabled=not computed
         display_units.draw(row,cfg,'resolved_radius' if computed else 'radius',context,text='Radius')
         column.prop(cfg,'sweep')
+        if cfg.pivot=='BOUNDS':
+            _toggle_label(column,cfg,'flip_bend','Flip Bend')
         _toggle_label(column,cfg,'rotate_copies','Rotate Copies',enabled=not cfg.fit_ring)
         _toggle_label(column,cfg,'fit_ring','Fit Ring')
         if angular_fit:

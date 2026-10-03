@@ -312,6 +312,12 @@ def _base_plan(snap, cfg, scene):
         raise ValueError('Radius must be greater than 0.')
     if pivot_mode == 'BOUNDS':
         radial = frame.to_3x3() @ (_AXES['Z'] if axis_name == 'X' else _AXES['X']) * radius
+        if getattr(cfg, 'flip_bend', False):
+            # Put the center on the other side of the unchanged source. Reverse
+            # the rotation as well, so the row keeps its initial travel direction
+            # while its curvature changes sign. No geometry is mirrored.
+            radial.negate()
+            step = -step
         pivot = anchor - radial
     ring_info = None
     if angular_fitting:
