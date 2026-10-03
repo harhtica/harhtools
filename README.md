@@ -4,7 +4,19 @@ A Blender extension with an editable-curve Shape Builder, reusable shape library
 outlines, arrays, and object alignment tools.
 Requires Blender 4.2 or newer; tested on Blender 5.2.
 
-## Version 1.18.2
+## Version 1.19.0
+
+- **Array > Deform > Deform Copies** gradually scales each complete copied group.
+  **Last Copy Size** is a percentage of the unchanged original: 25% with four
+  linear pieces gives 100%, 75%, 50%, 25%. All axes shrink evenly.
+- **Keep Edge Gaps** preserves the linear gap as copies change size or rotation.
+  Switch it off to retain the original positions. **Progression** controls how
+  the change is distributed; **Move / Rotate** adds optional gradual transforms.
+- Textured previews smoothly animate the size changes and match generation,
+  including **Join Generated**. UV coordinates stay unchanged. Deformation pauses
+  during Fit Length or Fit Ring so those existing fits retain their behavior.
+
+## Included from 1.18.2
 
 - Spacing and alignment now always move **whole objects in Object Mode**. Joined
   groups retain their internal arrangement, even with an older saved Disconnected

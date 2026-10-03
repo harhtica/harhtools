@@ -1,6 +1,6 @@
 """Small, deterministic motion layer for the Array ghost preview.
 
-Only rigid group transforms are animated. Scene objects and source geometry
+Group translation, rotation and scale are animated. Scene objects and source geometry
 are never touched; callers draw the sampled matrices with their cached mesh.
 """
 from dataclasses import dataclass
@@ -47,6 +47,10 @@ def _rigid_mix(a, b, amount):
     rotation = qa.slerp(qb, _unit(amount))
     rotation.normalize()
     result = rotation.to_matrix().to_4x4()
+    # Scale must interpolate too, or tapered copies pop back to full size while
+    # moving. Bound this factor so Back easing cannot overshoot through zero.
+    scale = a.to_scale().lerp(b.to_scale(), _unit(amount))
+    result = result @ Matrix.Diagonal((*scale, 1.0))
     result.translation = position
     return result
 
@@ -164,7 +168,7 @@ class TweenPreview:
         return True
 
     def sample(self, now=None):
-        """Return (rigid world-group transform, bounded opacity) in slot order."""
+        """Return (world-group transform, bounded opacity) in slot order."""
         values = self._sample_items(_clock(now))
         return [values[slot] for slot in sorted(values)]
 

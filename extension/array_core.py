@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import math
 
 import bpy
-from mathutils import Matrix, Vector
+from mathutils import Euler, Matrix, Vector
 
 
 MAX_NEW_OBJECTS = 10000
@@ -224,7 +224,7 @@ def angular_fit(points, pivot, axis, sweep):
                 closes=remainder == 0.0 and slots > 0)
 
 
-def build_plan(snap, cfg, scene):
+def _base_plan(snap, cfg, scene):
     """Return group transforms; no datablocks or source properties are changed."""
     orientation = getattr(cfg, 'orientation', 'WORLD')
     if orientation not in {'WORLD', 'ACTIVE'}:
@@ -330,6 +330,62 @@ def build_plan(snap, cfg, scene):
             transform = Matrix.Translation(destination - anchor)
         transforms.append(transform)
     return Plan(tuple(transforms), pivot, axis, radius, total, frame, ring_info=ring_info)
+
+
+def deformation_paused(cfg):
+    return (cfg.mode == 'LINEAR' and getattr(cfg, 'fit_length', False)
+            or cfg.mode == 'CIRCULAR' and getattr(cfg, 'fit_ring', False))
+
+
+def _deform_weight(t, style):
+    if style == 'LINEAR': return t
+    if style == 'SMOOTH': return t * t * (3 - 2 * t)
+    if style == 'EASE_IN': return t * t
+    if style == 'EASE_OUT': return 1 - (1 - t) ** 2
+    raise ValueError('Choose a valid deformation progression.')
+
+
+def build_plan(snap, cfg, scene):
+    """Build exact preview/commit poses, including optional gradual group changes."""
+    plan = _base_plan(snap, cfg, scene)
+    if (not getattr(cfg, 'deform_enabled', False) or deformation_paused(cfg)
+            or not plan.transforms):
+        return plan
+    end_scale = _finite(getattr(cfg, 'deform_scale', 50.), 'Last Copy Size') / 100
+    if end_scale <= 0:
+        raise ValueError('Last Copy Size must be greater than zero.')
+    offset = Vector(tuple(_finite(v, 'Move') for v in getattr(cfg, 'deform_offset', (0, 0, 0))))
+    rotation = Vector(tuple(_finite(v, 'Rotate') for v in getattr(cfg, 'deform_rotation', (0, 0, 0))))
+    if end_scale == 1 and offset.length_squared == 0 and rotation.length_squared == 0:
+        return plan
+    style = getattr(cfg, 'deform_ease', 'LINEAR')
+    frame, inverse = plan.frame, plan.frame.transposed()
+    low, high = _bounds(tuple(inverse @ p for p in snap.bounds_points))
+    anchor = frame @ ((low + high) * .5)
+    to_center, from_center = Matrix.Translation(anchor), Matrix.Translation(-anchor)
+    keep_gap = cfg.mode == 'LINEAR' and getattr(cfg, 'deform_keep_gap', True)
+    if keep_gap:
+        direction = frame.to_3x3() @ _AXES[_linear_axis(cfg)]
+        previous_high = max(p.dot(direction) for p in snap.bounds_points)
+        gap = _finite(cfg.gap, 'Gap')
+    transforms = []
+    for i, base in enumerate(plan.transforms, 1):
+        t = _deform_weight(i / len(plan.transforms), style)
+        scale = 1 + (end_scale - 1) * t
+        shape = (to_center @ frame @ Euler(tuple(rotation * t), 'XYZ').to_matrix().to_4x4()
+                 @ Matrix.Scale(scale, 4) @ inverse @ from_center)
+        if keep_gap:
+            # Measure each changed group before its additional Move offset.
+            # This preserves the requested edge gap even when height or twist changes.
+            projections = [(shape @ p).dot(direction) for p in snap.bounds_points]
+            distance = previous_high + gap - min(projections)
+            base = Matrix.Translation(direction * distance)
+            previous_high = max(projections) + distance
+        move = Matrix.Translation(frame.to_3x3() @ (offset * t))
+        # In circular arrays the change follows each copy's own rotated frame.
+        transforms.append(base @ move @ shape)
+    plan.transforms = tuple(transforms)
+    return plan
 
 
 def axis_availability(snap, cfg, scene):

@@ -3,7 +3,7 @@ import math
 import textwrap
 import bpy
 from bpy.app.handlers import persistent
-from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, FloatVectorProperty, IntProperty, PointerProperty
 from mathutils import Matrix
 from . import array_core, array_inference, array_tween, array_material_preview, icons, shortcuts, display_units
 
@@ -119,6 +119,14 @@ def native_scene_modal(window):
 
 
 class HARHTOOLS_PG_array(bpy.types.PropertyGroup):
+    deform_enabled:BoolProperty(name='Deform Copies',description='Gradually scale, move or turn whole copied groups from the unchanged original to the last copy',default=False,update=changed)
+    deform_scale:FloatProperty(name='Last Copy Size',description='Uniform size of the last copy relative to the original; 50% is half size on every axis',default=50.,min=1.,max=1000.,soft_max=200.,subtype='PERCENTAGE',precision=1,update=changed)
+    deform_keep_gap:BoolProperty(name='Keep Edge Gaps',description='Adjust linear copy positions to retain the Gap as their size and rotation change; additional Move offsets are applied afterward',default=True,update=changed)
+    deform_ease:EnumProperty(name='Progression',items=[('LINEAR','Even','Equal changes between copies'),('SMOOTH','Smooth','Gentle change at both ends'),('EASE_IN','Slow Start','More change near the last copy'),('EASE_OUT','Slow End','More change near the original')],default='LINEAR',update=changed)
+    deform_offset:FloatVectorProperty(name='Last Copy Move',description='Total additional offset by the last copy, using the array axes; follows rotation in a circular array',size=3,default=(0.,0.,0.),subtype='TRANSLATION',unit='LENGTH',update=changed)
+    deform_offset_studs:FloatVectorProperty(name='Last Copy Move (studs)',size=3,precision=3,options={'SKIP_SAVE'},get=lambda self:tuple(v*display_units.factor() for v in self.deform_offset),set=lambda self,value:setattr(self,'deform_offset',tuple(v/display_units.factor() for v in value)))
+    deform_rotation:FloatVectorProperty(name='Last Copy Rotate',description='Total extra rotation by the last copy around the copied group center, using the array axes',size=3,default=(0.,0.,0.),subtype='EULER',unit='ROTATION',update=changed)
+    deform_extra:BoolProperty(name='Move / Rotate',description='Show optional gradual movement and rotation controls',default=False)
     show_materials:BoolProperty(name='Show Materials',description='Preview actual materials and transparent cutouts in Material Preview or Rendered view',default=True,update=length_changed)
     gap_studs:display_units.distance_property('gap','Gap',minimum=-1e10)
     radius_studs:display_units.distance_property('radius','Radius')
@@ -741,6 +749,24 @@ def draw_visibility(layout,context):
     opacity.prop(cfg,'inactive_opacity',text='Opacity',slider=True)
 
 
+def draw_deform(layout,context):
+    cfg=settings(context)
+    paused=array_core.deformation_paused(cfg)
+    _toggle_label(layout,cfg,'deform_enabled','Deform Copies',enabled=not paused)
+    if paused:
+        layout.label(text='Deform pauses while Fit is on.')
+        return
+    if not cfg.deform_enabled:return
+    layout.prop(cfg,'deform_scale',slider=True)
+    layout.prop(cfg,'deform_ease')
+    if cfg.mode=='LINEAR':layout.prop(cfg,'deform_keep_gap')
+    layout.prop(cfg,'deform_extra',toggle=True)
+    if cfg.deform_extra:
+        display_units.draw(layout,cfg,'deform_offset',context)
+        layout.prop(cfg,'deform_rotation')
+    layout.label(text='Original size stays unchanged.')
+
+
 def draw_actions(layout,context):
     cfg=settings(context);state=preview_state()
     column=layout.column(align=False);column.scale_y=shortcuts.CONTROL_HEIGHT
@@ -767,6 +793,7 @@ def draw_panel(layout,context):
     layout.label(text='Array',icon_value=icons.icon('array'))
     for title,key,draw in [('Direction','ARRAY_DIRECTION',draw_direction),
                            ('Pattern','ARRAY_PATTERN',draw_pattern),
+                           ('Deform','ARRAY_DEFORM',draw_deform),
                            ('Visibility','ARRAY_VISIBILITY',draw_visibility)]:
         body=shortcuts.section_box(layout,context,title,key)
         if body is not None:draw(body,context)

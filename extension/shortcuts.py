@@ -504,7 +504,7 @@ def grip_setter(group,section):
 
 
 _COLLAPSIBLE_SECTIONS=('BUILDER','CENTER','LIBRARY','SHORTCUTS','COLORS',
-                       'ARRAY_DIRECTION','ARRAY_PATTERN','ARRAY_VISIBILITY','LIBRARY_PLACEMENT')
+                       'ARRAY_DIRECTION','ARRAY_PATTERN','ARRAY_DEFORM','ARRAY_VISIBILITY','LIBRARY_PLACEMENT')
 
 
 def expanded_property(section):return 'harhtools_expanded_'+section.lower()

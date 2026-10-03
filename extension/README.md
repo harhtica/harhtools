@@ -1,6 +1,24 @@
-# harhtools 1.18.2
+# harhtools 1.19.0
 
 Shape Builder, reusable shapes, arrays, and alignment for Blender 4.2 or newer.
+
+## Gradual array changes
+
+Open **Array > Deform** and enable **Deform Copies**. **Last Copy Size** controls
+the uniform scale at the end of the array; the original stays at 100%. With four
+linear pieces, a 25% end size gives 100%, 75%, 50%, 25%. Each complete group shrinks
+around its center, preserving its proportions and internal arrangement.
+
+**Keep Edge Gaps** adjusts linear positions as sizes and rotations change to keep
+the chosen gap between group bounds. Turn it off to keep the original positions.
+**Progression** offers Even, Smooth, Slow Start and Slow End. **Move / Rotate**
+exposes the total additional XYZ movement and rotation at the last copy, using
+the selected array axes. Movement is applied after gap correction, and follows
+the orbital rotation in circular arrays.
+
+The preview updates smoothly, including actual materials and transparency.
+**Generate** and **Join Generated** use the same transforms without altering UVs.
+Fit Length and Fit Ring pause deformation while enabled.
 
 ## Space and align pieces
 
